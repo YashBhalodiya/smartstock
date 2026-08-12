@@ -253,6 +253,101 @@ export const StoreProvider = ({ children }) => {
     setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
   }, []);
 
+  // --- PHASE 4: PRODUCTS CRUD ACTIONS ---
+  const addProduct = useCallback((productData) => {
+    const newSku = productData.sku || `SKU-${products.length + 1012}`;
+    const newProduct = {
+      ...productData,
+      sku: newSku,
+      status: 'Active'
+    };
+
+    setProducts(prev => [newProduct, ...prev]);
+
+    // Increment count of the category
+    setCategories(prevCats => prevCats.map(cat => 
+      cat.name.toLowerCase() === productData.category.toLowerCase()
+        ? { ...cat, count: cat.count + 1 }
+        : cat
+    ));
+
+    addSystemNotification(
+      'system',
+      `Product catalog updated: ${productData.title} created successfully.`,
+      newSku
+    );
+
+    return newProduct;
+  }, [products, addSystemNotification]);
+
+  const updateProduct = useCallback((sku, updatedData) => {
+    setProducts(prev => prev.map(p => p.sku === sku ? { ...p, ...updatedData } : p));
+    
+    // Category count shifts if category is modified (complex, but simple approximation works for mockup)
+    addSystemNotification(
+      'system',
+      `Product SKU: ${sku} details successfully updated.`,
+      sku
+    );
+  }, [addSystemNotification]);
+
+  const toggleProductStatus = useCallback((sku) => {
+    setProducts(prev => prev.map(p => {
+      if (p.sku !== sku) return p;
+      const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
+      
+      addSystemNotification(
+        'system',
+        `Product ${p.title} has been marked ${nextStatus}.`,
+        sku
+      );
+      
+      return {
+        ...p,
+        status: nextStatus
+      };
+    }));
+  }, [addSystemNotification]);
+
+  // --- PHASE 4: CATEGORIES CRUD ACTIONS ---
+  const addCategory = useCallback((name) => {
+    const nextId = `CAT-${categories.length + 1}`;
+    const newCat = {
+      id: nextId,
+      name,
+      count: 0,
+      createdDate: 'Today, Just now',
+      status: 'Active'
+    };
+
+    setCategories(prev => [...prev, newCat]);
+    addSystemNotification('system', `Category tag: ${name} added successfully.`, nextId);
+    return newCat;
+  }, [categories, addSystemNotification]);
+
+  const updateCategory = useCallback((id, updatedData) => {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updatedData } : c));
+    addSystemNotification('system', `Category tag details updated.`, id);
+  }, [addSystemNotification]);
+
+  const toggleCategoryStatus = useCallback((id) => {
+    setCategories(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const nextStatus = c.status === 'Active' ? 'Inactive' : 'Active';
+      
+      addSystemNotification(
+        'system',
+        `Category department ${c.name} is now ${nextStatus}.`,
+        id
+      );
+
+      return {
+        ...c,
+        status: nextStatus
+      };
+    }));
+  }, [addSystemNotification]);
+
   return (
     <StoreContext.Provider value={{
       products,
@@ -271,7 +366,13 @@ export const StoreProvider = ({ children }) => {
       approveRestockOrder,
       receiveRestock,
       markNotificationAsRead,
-      markAllNotificationsAsRead
+      markAllNotificationsAsRead,
+      addProduct,
+      updateProduct,
+      toggleProductStatus,
+      addCategory,
+      updateCategory,
+      toggleCategoryStatus
     }}>
       {children}
     </StoreContext.Provider>

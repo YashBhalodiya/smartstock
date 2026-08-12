@@ -1,32 +1,218 @@
-import React from 'react';
-import { Card, CardHeader, CardBody, CardTitle } from '../../components/ui/Card';
+import React, { useState } from 'react';
+import { 
+  Plus, 
+  Edit3, 
+  Power, 
+  PowerOff,
+  FolderTree
+} from 'lucide-react';
+
+import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import { FolderTree } from 'lucide-react';
+import Input from '../../components/ui/Input';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../components/ui/Table';
+import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { EmptyState } from '../../components/ui/States';
+import { useStore } from '../../context/StoreContext';
+import { useToast } from '../../context/ToastContext';
 
 const Categories = () => {
+  const { addToast } = useToast();
+  const { 
+    categories, 
+    addCategory, 
+    updateCategory, 
+    toggleCategoryStatus 
+  } = useStore();
+
+  // Form Modal State
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
+  const [editingId, setEditingId] = useState(null);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+
+  // Status Toggle Confirm Dialog State
+  const [confirmToggleId, setConfirmToggleId] = useState(null);
+
+  const handleOpenAdd = () => {
+    setFormMode('add');
+    setEditingId(null);
+    setCategoryName('');
+    setCategoryError('');
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEdit = (category) => {
+    setFormMode('edit');
+    setEditingId(category.id);
+    setCategoryName(category.name);
+    setCategoryError('');
+    setIsFormOpen(true);
+  };
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    setCategoryError('');
+
+    if (!categoryName.trim()) {
+      setCategoryError('Category department name is required');
+      addToast('Validation error: category name is blank.', 'error');
+      return;
+    }
+
+    // Check if category name already exists
+    const categoryExists = categories.some(
+      c => c.name.toLowerCase() === categoryName.trim().toLowerCase() && c.id !== editingId
+    );
+
+    if (categoryExists) {
+      setCategoryError('This category department already exists in records.');
+      addToast('Category name already exists.', 'error');
+      return;
+    }
+
+    if (formMode === 'add') {
+      addCategory(categoryName.trim());
+      addToast('New category department successfully added!', 'success');
+    } else {
+      updateCategory(editingId, { name: categoryName.trim() });
+      addToast('Category name updated successfully!', 'success');
+    }
+
+    setIsFormOpen(false);
+  };
+
+  const handleToggleConfirm = (id) => {
+    setConfirmToggleId(id);
+  };
+
+  const handleStatusToggle = () => {
+    if (confirmToggleId) {
+      toggleCategoryStatus(confirmToggleId);
+      addToast('Category status successfully toggled.', 'success');
+      setConfirmToggleId(null);
+    }
+  };
+
   return (
-    <div className="skeleton-page">
-      <div className="page-header flex-between">
+    <div className="categories-page">
+      <div className="page-header flex-between" style={{ marginBottom: '24px' }}>
         <div>
           <h1 className="text-2xl font-bold">Categories</h1>
-          <p className="text-muted text-sm">Organize products into functional departments and sections</p>
+          <p className="text-muted text-sm">Organize products into distinct department classifications</p>
         </div>
-        <Badge variant="neutral">Management</Badge>
+        <Button variant="primary" icon={<Plus size={16} />} onClick={handleOpenAdd}>
+          Add Category
+        </Button>
       </div>
 
-      <div style={{ marginTop: '24px' }}>
-        <Card style={{ minHeight: '300px' }}>
-          <CardHeader>
-            <CardTitle>Departments &amp; Categories Table (Placeholder)</CardTitle>
-          </CardHeader>
-          <CardBody className="flex-center text-muted">
-            <div style={{ textAlign: 'center' }}>
-              <FolderTree size={48} style={{ marginBottom: '12px', opacity: 0.5 }} />
-              <p>Add/edit departments (e.g. Beverages, FMCG, Dairy), review item counts, and manage classification toggles here.</p>
-            </div>
+      {categories.length === 0 ? (
+        <EmptyState
+          title="No Category Departments Found"
+          description="Create your first product department folder to organize inventory items."
+          actionLabel="Add Category"
+          onAction={handleOpenAdd}
+        />
+      ) : (
+        <Card>
+          <CardBody style={{ padding: 0 }}>
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th>Category ID</Th>
+                  <Th>Department Name</Th>
+                  <Th>Total Products Count</Th>
+                  <Th>Created Date</Th>
+                  <Th>Status</Th>
+                  <Th align="right">Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {categories.map((category) => {
+                  const isInactive = category.status === 'Inactive';
+
+                  return (
+                    <Tr key={category.id} style={isInactive ? { opacity: 0.6 } : {}}>
+                      <Td><span className="font-mono text-sm">{category.id}</span></Td>
+                      <Td><span className="font-semibold text-neutral-800">{category.name}</span></Td>
+                      <Td><span className="font-semibold text-neutral-700">{category.count} items</span></Td>
+                      <Td className="text-muted">{category.createdDate}</Td>
+                      <Td>
+                        <Badge variant={isInactive ? 'neutral' : 'success'}>
+                          {category.status}
+                        </Badge>
+                      </Td>
+                      <Td align="right">
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            style={{ padding: '6px' }}
+                            onClick={() => handleOpenEdit(category)}
+                          >
+                            <Edit3 size={15} />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            style={{ padding: '6px', color: isInactive ? 'var(--success)' : 'var(--danger)' }}
+                            onClick={() => handleToggleConfirm(category.id)}
+                          >
+                            {isInactive ? <Power size={15} /> : <PowerOff size={15} />}
+                          </Button>
+                        </div>
+                      </Td>
+                    </Tr>
+                  );
+                })}
+              </Tbody>
+            </Table>
           </CardBody>
         </Card>
-      </div>
+      )}
+
+      {/* ADD / EDIT CATEGORY MODAL FORM */}
+      <Modal
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={formMode === 'add' ? 'Add New Category' : `Edit Category Department`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsFormOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleFormSubmit}>
+              {formMode === 'add' ? 'Save Category' : 'Update Name'}
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleFormSubmit}>
+          <Input
+            id="categoryName"
+            label="Department Name"
+            value={categoryName}
+            onChange={(e) => { setCategoryName(e.target.value); setCategoryError(''); }}
+            placeholder="e.g. FMCG Goods, Beverages"
+            error={categoryError}
+            required
+            autoFocus
+          />
+        </form>
+      </Modal>
+
+      {/* STATUS TOGGLE CONFIRM DIALOG */}
+      <ConfirmDialog
+        isOpen={confirmToggleId !== null}
+        onClose={() => setConfirmToggleId(null)}
+        onConfirm={handleStatusToggle}
+        title="Toggle Category Status?"
+        message="Deactivating this category classification department will flag it as inactive. Current items remain untouched."
+        type="warning"
+        confirmText="Toggle Status"
+      />
+
     </div>
   );
 };

@@ -2096,6 +2096,28 @@ a:hover {
   }
 }
 
+/* Modal Form Grids Alignment Utilities */
+.modal-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+.grid-span-all {
+  grid-column: 1 / -1;
+}
+
+.margin-zero-form.form-group {
+  margin-bottom: 0;
+}
+
+/* Product quick detail display sheet */
+.product-detail-sheet strong {
+  color: var(--neutral-500);
+}
+
+
 
 
 
