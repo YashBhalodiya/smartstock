@@ -1767,6 +1767,105 @@ a:hover {
   color: var(--neutral-400);
 }
 
+/* Dashboard Specific Layout Styles */
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-greet-section h1 {
+  color: var(--neutral-900);
+}
+
+.quick-actions-strip {
+  border-color: var(--neutral-200);
+  box-shadow: var(--shadow-sm);
+}
+
+.kpi-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.kpi-icon-wrapper.bg-primary-light { background-color: var(--primary-light); color: var(--primary); }
+.kpi-icon-wrapper.bg-success-light { background-color: var(--success-light); color: var(--success); }
+.kpi-icon-wrapper.bg-warning-light { background-color: var(--warning-light); color: var(--warning); }
+.kpi-icon-wrapper.bg-danger-light { background-color: var(--danger-light); color: var(--danger); }
+
+/* Dashboard Charts Layout (Line & Donut side-by-side) */
+.dashboard-charts-container {
+  display: grid;
+  grid-template-columns: 2.2fr 1.1fr;
+  gap: 24px;
+  width: 100%;
+}
+
+.dashboard-chart-card-main, .dashboard-chart-card-secondary {
+  height: 100%;
+}
+
+/* Donut chart legends styling */
+.donut-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Lower Tables Layout (Low Stock, Sales, Restocks) */
+.dashboard-tables-container {
+  display: grid;
+  grid-template-columns: 2.2fr 1.1fr;
+  gap: 24px;
+  width: 100%;
+}
+
+.dashboard-tables-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.restock-activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.restock-feed-card {
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.restock-feed-card:hover {
+  transform: translateX(2px);
+  border-color: var(--neutral-300);
+}
+
+/* Responsiveness adjustments for dashboard grids */
+@media (max-width: 1024px) {
+  .dashboard-charts-container,
+  .dashboard-tables-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+
 
 
 
