@@ -34,12 +34,10 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../components/ui/Table';
 import Tabs from '../../components/ui/Tabs';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../context/ToastContext';
+import { useStore } from '../../context/StoreContext';
 
 // Import central mock data
 import { 
-  INITIAL_PRODUCTS, 
-  INITIAL_RESTOCK_ORDERS, 
-  INITIAL_SALES, 
   CHART_DATA_7D, 
   CHART_DATA_30D, 
   CHART_DATA_90D, 
@@ -49,6 +47,7 @@ import {
 const Dashboard = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { products, sales, restockOrders } = useStore();
   const [chartRange, setChartRange] = useState('7d');
 
   // Chart data range selector
@@ -63,14 +62,14 @@ const Dashboard = () => {
   };
 
   // Derived dashboard metrics from mock database
-  const totalProducts = INITIAL_PRODUCTS.length;
+  const totalProducts = products.length;
   
-  const lowStockProducts = INITIAL_PRODUCTS.filter(p => p.currentStock <= p.minStock);
+  const lowStockProducts = products.filter(p => p.currentStock <= p.minStock);
   const lowStockCount = lowStockProducts.length;
-  const criticalStockCount = INITIAL_PRODUCTS.filter(p => p.currentStock <= 5 && p.currentStock > 0).length;
-  const outOfStockCount = INITIAL_PRODUCTS.filter(p => p.currentStock === 0).length;
+  const criticalStockCount = products.filter(p => p.currentStock <= 5 && p.currentStock > 0).length;
+  const outOfStockCount = products.filter(p => p.currentStock === 0).length;
   
-  const pendingRestocksCount = INITIAL_RESTOCK_ORDERS.filter(o => o.status === 'Pending Approval').length;
+  const pendingRestocksCount = restockOrders.filter(o => o.status === 'Pending Approval').length;
 
   const handleQuickAction = (action, route) => {
     addToast(`Navigating to ${action}...`, 'info', 1500);
@@ -198,7 +197,7 @@ const Dashboard = () => {
                 <RefreshCcw size={18} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>{INITIAL_RESTOCK_ORDERS.filter(o => o.status !== 'Received').length}</h2>
+            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>{restockOrders.filter(o => o.status !== 'Received').length}</h2>
             <div className="flex-center" style={{ justifyContent: 'flex-start', gap: '6px' }}>
               <Badge variant={pendingRestocksCount > 0 ? 'danger' : 'neutral'} style={{ fontSize: '11px', padding: '2px 6px' }}>
                 {pendingRestocksCount} Pending approval
@@ -342,7 +341,7 @@ const Dashboard = () => {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {INITIAL_PRODUCTS.filter(p => p.currentStock <= p.minStock)
+                  {products.filter(p => p.currentStock <= p.minStock)
                     .sort((a, b) => a.currentStock - b.currentStock)
                     .slice(0, 4)
                     .map((product) => {
@@ -421,7 +420,7 @@ const Dashboard = () => {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {INITIAL_SALES.slice(0, 3).map((sale) => (
+                  {sales.slice(0, 3).map((sale) => (
                     <Tr key={sale.invoiceNo}>
                       <Td><span className="font-semibold text-primary">{sale.invoiceNo}</span></Td>
                       <Td>{sale.itemsCount} items</Td>
@@ -465,7 +464,7 @@ const Dashboard = () => {
             </CardHeader>
             <CardBody style={{ padding: '0 20px 20px' }}>
               <div className="restock-activity-feed" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {INITIAL_RESTOCK_ORDERS.slice(0, 3).map((order) => {
+                {restockOrders.slice(0, 3).map((order) => {
                   let statusColor = 'warning';
                   if (order.status === 'Received') statusColor = 'success';
                   if (order.status === 'Email Sent') statusColor = 'primary';

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
+import { StoreProvider } from './context/StoreContext';
 import MainLayout from './layouts/MainLayout';
 
 // Pages
@@ -35,47 +36,49 @@ function App() {
 
   return (
     <ToastProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Route */}
-          <Route 
-            path="/login" 
-            element={
-              isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login onLogin={handleLogin} />
-            } 
-          />
+      <StoreProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public Route */}
+            <Route 
+              path="/login" 
+              element={
+                isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login onLogin={handleLogin} />
+              } 
+            />
 
-          {/* Protected Routes Panel */}
-          <Route 
-            path="/" 
-            element={
-              isAuthenticated ? <MainLayout onLogout={handleLogout} /> : <Navigate to="/login" replace />
-            }
-          >
-            {/* Redirect root to dashboard */}
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            
-            {/* Core Views */}
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="sales" element={<Sales />} />
-            <Route path="sales/new" element={<NewSale />} />
-            <Route path="products" element={<Products />} />
-            <Route path="categories" element={<Categories />} />
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="restock-orders" element={<RestockOrders />} />
-            <Route path="suppliers" element={<Suppliers />} />
-            <Route path="notifications" element={<Notifications />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="settings" element={<Settings />} />
-            
-            {/* Developer Sandbox */}
-            <Route path="sandbox" element={<Sandbox />} />
-          </Route>
+            {/* Protected Routes Panel */}
+            <Route 
+              path="/" 
+              element={
+                isAuthenticated ? <MainLayout onLogout={handleLogout} /> : <Navigate to="/login" replace />
+              }
+            >
+              {/* Redirect root to dashboard */}
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              
+              {/* Core Views */}
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="sales" element={<Sales />} />
+              <Route path="sales/new" element={<NewSale />} />
+              <Route path="products" element={<Products />} />
+              <Route path="categories" element={<Categories />} />
+              <Route path="inventory" element={<Inventory />} />
+              <Route path="restock-orders" element={<RestockOrders />} />
+              <Route path="suppliers" element={<Suppliers />} />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="settings" element={<Settings />} />
+              
+              {/* Developer Sandbox */}
+              <Route path="sandbox" element={<Sandbox />} />
+            </Route>
 
-          {/* Catch-all Redirect */}
-          <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all Redirect */}
+            <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
+          </Routes>
+        </BrowserRouter>
+      </StoreProvider>
     </ToastProvider>
   );
 }

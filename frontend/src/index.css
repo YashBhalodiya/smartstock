@@ -1865,6 +1865,238 @@ a:hover {
   }
 }
 
+/* Point of Sale (POS) Workspace Styles */
+.pos-page-wrapper {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 24px;
+  width: 100%;
+  align-items: start;
+}
+
+.pos-products-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Category Chips Selector */
+.pos-category-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.pos-category-chips::-webkit-scrollbar {
+  height: 4px;
+}
+
+.category-chip {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--neutral-200);
+  background-color: var(--neutral-50);
+  color: var(--neutral-600);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.category-chip:hover {
+  border-color: var(--neutral-300);
+  color: var(--neutral-800);
+}
+
+.category-chip.active {
+  background-color: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+/* Product Catalog Grid */
+.pos-products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.pos-product-card {
+  height: 150px;
+  cursor: pointer;
+}
+
+.pos-product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--neutral-300);
+}
+
+.pos-product-card.out-of-stock-card {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  border-color: var(--neutral-200);
+}
+
+.pos-product-card-body {
+  height: 100%;
+  justify-content: space-between;
+}
+
+/* Cart Panel (Right column sticky) */
+.pos-cart-column {
+  position: sticky;
+  top: calc(var(--navbar-height) + 24px);
+  height: calc(100vh - var(--navbar-height) - 48px);
+}
+
+.pos-cart-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-cart-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Cart item rows */
+.pos-cart-items-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-cart-item-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--neutral-200);
+  background-color: #ffffff;
+}
+
+.pos-cart-item-row:last-child {
+  border-bottom: none;
+}
+
+/* Quantity controls toggles */
+.cart-qty-toggle {
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  height: 28px;
+}
+
+.cart-qty-btn {
+  background-color: var(--neutral-50);
+  border: none;
+  color: var(--neutral-600);
+  width: 26px;
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color var(--transition-fast);
+}
+
+.cart-qty-btn:hover {
+  background-color: var(--neutral-200);
+}
+
+.cart-qty-val {
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--neutral-800);
+}
+
+.cart-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--neutral-400);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.cart-remove-btn:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+  color: var(--danger);
+}
+
+/* Payment selection toggles */
+.payment-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.payment-option-btn {
+  height: 38px;
+  border: 1px solid var(--neutral-300);
+  background-color: #ffffff;
+  border-radius: var(--border-radius-sm);
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--neutral-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.payment-option-btn:hover:not(:disabled) {
+  border-color: var(--neutral-400);
+  color: var(--neutral-800);
+}
+
+.payment-option-btn.active {
+  background-color: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.payment-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Checkout success panel layout details */
+.pos-success-card {
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--border-radius-lg);
+}
+
+.pos-success-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.pos-checkout-btn {
+  width: 100%;
+}
+
+/* Responsive collapse for columns */
+@media (max-width: 1024px) {
+  .pos-page-wrapper {
+    grid-template-columns: 1fr;
+  }
+  
+  .pos-cart-column {
+    position: relative;
+    top: 0;
+    height: auto;
+    margin-top: 24px;
+  }
+}
+
+
 
 
 
