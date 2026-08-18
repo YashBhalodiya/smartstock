@@ -348,6 +348,202 @@ export const StoreProvider = ({ children }) => {
     }));
   }, [addSystemNotification]);
 
+  // --- PHASE 5: INVENTORY ACTIONS ---
+  const adjustStock = useCallback((sku, newStockCount, reason) => {
+    const product = products.find(p => p.sku === sku);
+    if (!product) return;
+
+    const updatedProduct = { ...product, currentStock: Number(newStockCount) };
+
+    setProducts(prevProducts => prevProducts.map(p => {
+      if (p.sku !== sku) return p;
+      return updatedProduct;
+    }));
+
+    addSystemNotification(
+      'system',
+      `Stock Adjustment: ${product.title} set to ${newStockCount} units. Reason: ${reason}.`,
+      sku
+    );
+
+    // If stock goes below safety threshold, trigger automated restock check
+    if (updatedProduct.currentStock <= updatedProduct.minStock) {
+      addSystemNotification(
+        'low_stock', 
+        `🔴 Alert: Adjusted stock of ${updatedProduct.title} is below safety levels (${updatedProduct.currentStock} units).`, 
+        sku
+      );
+
+      // Auto append to restock orders
+      const supplier = suppliers.find(s => s.id === updatedProduct.supplierId);
+      if (supplier) {
+        setRestockOrders(prevOrders => {
+          const existingPendingIndex = prevOrders.findIndex(
+            o => o.supplierId === updatedProduct.supplierId && o.status === 'Pending Approval'
+          );
+
+          if (existingPendingIndex > -1) {
+            const existingOrder = prevOrders[existingPendingIndex];
+            const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
+            
+            if (!hasProduct) {
+              const orderItem = {
+                sku: updatedProduct.sku,
+                title: updatedProduct.title,
+                currentStock: updatedProduct.currentStock,
+                orderQty: updatedProduct.restockQty,
+                minStock: updatedProduct.minStock
+              };
+              
+              const updatedProductsList = [...existingOrder.products, orderItem];
+              const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+              
+              const updatedOrdersList = [...prevOrders];
+              updatedOrdersList[existingPendingIndex] = {
+                ...existingOrder,
+                itemsCount: updatedProductsList.length,
+                totalAmount: existingOrder.totalAmount + additionalCost,
+                products: updatedProductsList
+              };
+              return updatedOrdersList;
+            }
+          } else {
+            const newRoId = `RO-${prevOrders.length + 1005}`;
+            const orderItem = {
+              sku: updatedProduct.sku,
+              title: updatedProduct.title,
+              currentStock: updatedProduct.currentStock,
+              orderQty: updatedProduct.restockQty,
+              minStock: updatedProduct.minStock
+            };
+            const totalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+
+            const newOrder = {
+              id: newRoId,
+              supplierId: updatedProduct.supplierId,
+              supplierName: supplier.name,
+              email: supplier.email,
+              itemsCount: 1,
+              totalAmount: totalCost,
+              date: 'Today, Just now',
+              status: 'Pending Approval',
+              products: [orderItem]
+            };
+
+            // Increment active orders for supplier
+            setSuppliers(prevSuppliers => prevSuppliers.map(s => 
+              s.id === supplier.id ? { ...s, activeOrders: s.activeOrders + 1 } : s
+            ));
+
+            return [newOrder, ...prevOrders];
+          }
+          return prevOrders;
+        });
+      }
+    }
+  }, [products, suppliers, addSystemNotification]);
+
+  const triggerManualRestock = useCallback((sku, quantity) => {
+    const product = products.find(p => p.sku === sku);
+    if (!product) return;
+
+    const supplier = suppliers.find(s => s.id === product.supplierId);
+    if (!supplier) return;
+
+    const qtyToOrder = Number(quantity) || product.restockQty;
+
+    setRestockOrders(prevOrders => {
+      const existingPendingIndex = prevOrders.findIndex(
+        o => o.supplierId === product.supplierId && o.status === 'Pending Approval'
+      );
+
+      if (existingPendingIndex > -1) {
+        const existingOrder = prevOrders[existingPendingIndex];
+        const hasProductIndex = existingOrder.products.findIndex(pr => pr.sku === product.sku);
+        
+        const updatedOrdersList = [...prevOrders];
+        if (hasProductIndex > -1) {
+          // Product already in pending order, increase qty
+          const updatedProductsList = existingOrder.products.map((pr, index) => {
+            if (index === hasProductIndex) {
+              return { ...pr, orderQty: pr.orderQty + qtyToOrder };
+            }
+            return pr;
+          });
+          const additionalCost = product.purchasePrice * qtyToOrder;
+          
+          updatedOrdersList[existingPendingIndex] = {
+            ...existingOrder,
+            totalAmount: existingOrder.totalAmount + additionalCost,
+            products: updatedProductsList
+          };
+        } else {
+          // Add product to pending order
+          const orderItem = {
+            sku: product.sku,
+            title: product.title,
+            currentStock: product.currentStock,
+            orderQty: qtyToOrder,
+            minStock: product.minStock
+          };
+          const updatedProductsList = [...existingOrder.products, orderItem];
+          const additionalCost = product.purchasePrice * qtyToOrder;
+          
+          updatedOrdersList[existingPendingIndex] = {
+            ...existingOrder,
+            itemsCount: updatedProductsList.length,
+            totalAmount: existingOrder.totalAmount + additionalCost,
+            products: updatedProductsList
+          };
+        }
+
+        addSystemNotification(
+          'restock_generated',
+          `Manual restock for ${product.title} (Qty: ${qtyToOrder}) added to pending restock ${existingOrder.id}.`,
+          existingOrder.id
+        );
+
+        return updatedOrdersList;
+      } else {
+        // Create new pending order
+        const newRoId = `RO-${prevOrders.length + 1005}`;
+        const orderItem = {
+          sku: product.sku,
+          title: product.title,
+          currentStock: product.currentStock,
+          orderQty: qtyToOrder,
+          minStock: product.minStock
+        };
+        const totalCost = product.purchasePrice * qtyToOrder;
+
+        const newOrder = {
+          id: newRoId,
+          supplierId: product.supplierId,
+          supplierName: supplier.name,
+          email: supplier.email,
+          itemsCount: 1,
+          totalAmount: totalCost,
+          date: 'Today, Just now',
+          status: 'Pending Approval',
+          products: [orderItem]
+        };
+
+        // Increment active orders for supplier
+        setSuppliers(prevSuppliers => prevSuppliers.map(s => 
+          s.id === supplier.id ? { ...s, activeOrders: s.activeOrders + 1 } : s
+        ));
+
+        addSystemNotification(
+          'restock_generated',
+          `Manual restock generated ${newRoId} for ${supplier.name} (Qty: ${qtyToOrder}).`,
+          newRoId
+        );
+
+        return [newOrder, ...prevOrders];
+      }
+    });
+  }, [products, suppliers, addSystemNotification]);
+
   return (
     <StoreContext.Provider value={{
       products,
@@ -372,7 +568,9 @@ export const StoreProvider = ({ children }) => {
       toggleProductStatus,
       addCategory,
       updateCategory,
-      toggleCategoryStatus
+      toggleCategoryStatus,
+      adjustStock,
+      triggerManualRestock
     }}>
       {children}
     </StoreContext.Provider>
