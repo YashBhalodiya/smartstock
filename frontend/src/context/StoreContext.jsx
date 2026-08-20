@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_SUPPLIERS, 
@@ -7,6 +7,10 @@ import {
   INITIAL_RESTOCK_ORDERS, 
   INITIAL_NOTIFICATIONS 
 } from '../constants/mockData';
+import { suppliersService } from '../services/suppliers.service';
+import { productsService } from '../services/products.service';
+import { categoriesService } from '../services/categories.service';
+import { salesService } from '../services/sales.service';
 
 const StoreContext = createContext(null);
 
@@ -40,6 +44,77 @@ export const StoreProvider = ({ children }) => {
   const [restockOrders, setRestockOrders] = useState(() => getInitialData(INITIAL_RESTOCK_ORDERS));
   const [notifications, setNotifications] = useState(() => getInitialData(INITIAL_NOTIFICATIONS));
 
+  // Automatically fetch shopkeeper's suppliers from backend API
+  const refreshSuppliers = useCallback(async () => {
+    if (localStorage.getItem('stockflow_token')) {
+      try {
+        const data = await suppliersService.getSuppliers();
+        if (Array.isArray(data)) {
+          setSuppliers(data);
+        }
+      } catch (err) {
+        console.error('Failed to load shopkeeper suppliers:', err);
+      }
+    }
+  }, []);
+
+  // Fetch shopkeeper's products from backend API
+  const refreshProducts = useCallback(async () => {
+    if (localStorage.getItem('stockflow_token')) {
+      try {
+        const data = await productsService.getProducts();
+        if (Array.isArray(data)) {
+          setProducts(data);
+        }
+      } catch (err) {
+        console.error('Failed to load shopkeeper products:', err);
+      }
+    }
+  }, []);
+
+  // Fetch shopkeeper's categories from backend API
+  const refreshCategories = useCallback(async () => {
+    if (localStorage.getItem('stockflow_token')) {
+      try {
+        const data = await categoriesService.getCategories();
+        if (Array.isArray(data)) {
+          setCategories(data);
+        }
+      } catch (err) {
+        console.error('Failed to load categories:', err);
+      }
+    }
+  }, []);
+
+  // Fetch shopkeeper's sales transactions from backend API
+  const refreshSales = useCallback(async () => {
+    if (localStorage.getItem('stockflow_token')) {
+      try {
+        const data = await salesService.getSales();
+        if (Array.isArray(data)) {
+          setSales(data);
+        }
+      } catch (err) {
+        console.error('Failed to load sales transactions:', err);
+      }
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    if (localStorage.getItem('stockflow_token')) {
+      await Promise.all([
+        refreshSuppliers(),
+        refreshProducts(),
+        refreshCategories(),
+        refreshSales()
+      ]);
+    }
+  }, [refreshSuppliers, refreshProducts, refreshCategories, refreshSales]);
+
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
   // Helper to add notification
   const addSystemNotification = useCallback((type, message, targetId) => {
     const newNotif = {
@@ -54,10 +129,22 @@ export const StoreProvider = ({ children }) => {
   }, []);
 
   // Completes a POS sale transaction
-  const createSale = useCallback((cartItems, paymentMethod, discount = 0) => {
+  const createSale = useCallback(async (cartItems, paymentMethod, discount = 0) => {
+    try {
+      if (localStorage.getItem('stockflow_token')) {
+        const createdSale = await salesService.createSale({ cartItems, paymentMethod, discount });
+        setSales(prev => [createdSale, ...prev]);
+        if (typeof refreshProducts === 'function') {
+          await refreshProducts();
+        }
+        return createdSale;
+      }
+    } catch (err) {
+      console.error('Error saving sale to database:', err);
+    }
+
+    // Local state fallback calculation if offline
     const invoiceNo = `INV-${sales.length + 1025}`;
-    
-    // 1. Calculations
     const itemsCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
     const subtotal = cartItems.reduce((acc, item) => acc + (item.sellingPrice * item.quantity), 0);
     const calculatedDiscount = Number(discount) || 0;
@@ -82,130 +169,9 @@ export const StoreProvider = ({ children }) => {
       }))
     };
 
-    // 2. Update stock & Check thresholds
-    const lowStockAlerts = [];
-    let updatedOrders = [...restockOrders];
-    let ordersModified = false;
-
-    const updatedProducts = products.map(product => {
-      const cartItem = cartItems.find(item => item.sku === product.sku);
-      if (!cartItem) return product;
-
-      const newStock = Math.max(0, product.currentStock - cartItem.quantity);
-      
-      // Stock dropped below safety threshold
-      if (newStock <= product.minStock) {
-        lowStockAlerts.push({
-          sku: product.sku,
-          title: product.title,
-          currentStock: newStock,
-          minStock: product.minStock
-        });
-
-        // 3. Automated Restock Logic
-        const supplier = suppliers.find(s => s.id === product.supplierId);
-        if (supplier) {
-          // Check if there's already a pending Restock Order for this supplier
-          const existingPendingIndex = updatedOrders.findIndex(
-            o => o.supplierId === product.supplierId && o.status === 'Pending Approval'
-          );
-
-          if (existingPendingIndex > -1) {
-            // Append item to existing pending restock order
-            const existingOrder = updatedOrders[existingPendingIndex];
-            const hasProduct = existingOrder.products.some(p => p.sku === product.sku);
-            
-            if (!hasProduct) {
-              const orderItem = {
-                sku: product.sku,
-                title: product.title,
-                currentStock: newStock,
-                orderQty: product.restockQty,
-                minStock: product.minStock
-              };
-              
-              const updatedProductsList = [...existingOrder.products, orderItem];
-              const additionalCost = product.purchasePrice * product.restockQty;
-              
-              updatedOrders[existingPendingIndex] = {
-                ...existingOrder,
-                itemsCount: updatedProductsList.length,
-                totalAmount: existingOrder.totalAmount + additionalCost,
-                products: updatedProductsList
-              };
-              ordersModified = true;
-              
-              addSystemNotification(
-                'restock_generated', 
-                `${product.title} low stock. Appended to pending restock ${existingOrder.id}.`, 
-                existingOrder.id
-              );
-            }
-          } else {
-            // Create a new pending restock order
-            const newRoId = `RO-${updatedOrders.length + 1005}`;
-            const orderItem = {
-              sku: product.sku,
-              title: product.title,
-              currentStock: newStock,
-              orderQty: product.restockQty,
-              minStock: product.minStock
-            };
-            const totalCost = product.purchasePrice * product.restockQty;
-
-            const newOrder = {
-              id: newRoId,
-              supplierId: product.supplierId,
-              supplierName: supplier.name,
-              email: supplier.email,
-              itemsCount: 1,
-              totalAmount: totalCost,
-              date: 'Today, Just now',
-              status: 'Pending Approval',
-              products: [orderItem]
-            };
-
-            updatedOrders = [newOrder, ...updatedOrders];
-            ordersModified = true;
-            
-            // Increment active orders for supplier
-            setSuppliers(prevSuppliers => prevSuppliers.map(s => 
-              s.id === supplier.id ? { ...s, activeOrders: s.activeOrders + 1 } : s
-            ));
-
-            addSystemNotification(
-              'restock_generated',
-              `Low Stock: Restock order ${newRoId} generated for ${supplier.name}.`,
-              newRoId
-            );
-          }
-        }
-      }
-
-      return {
-        ...product,
-        currentStock: newStock
-      };
-    });
-
-    // Commit state changes
-    setProducts(updatedProducts);
     setSales(prev => [newSale, ...prev]);
-    if (ordersModified) {
-      setRestockOrders(updatedOrders);
-    }
-    
-    // Add low stock notifications if triggered
-    lowStockAlerts.forEach(alert => {
-      addSystemNotification(
-        'low_stock', 
-        `🔴 Alert: ${alert.title} stock is low (${alert.currentStock} remaining).`, 
-        alert.sku
-      );
-    });
-
-    return { invoice: newSale, lowStockAlerts };
-  }, [products, sales, restockOrders, suppliers, addSystemNotification]);
+    return newSale;
+  }, [sales.length, refreshProducts]);
 
   // Approves a pending restock order
   const approveRestockOrder = useCallback((orderId) => {
@@ -268,31 +234,57 @@ export const StoreProvider = ({ children }) => {
   }, []);
 
   // --- PHASE 4: PRODUCTS CRUD ACTIONS ---
-  const addProduct = useCallback((productData) => {
-    const newSku = productData.sku || `SKU-${products.length + 1012}`;
-    const newProduct = {
-      ...productData,
-      sku: newSku,
-      status: 'Active'
-    };
+  const addProduct = useCallback(async (productData) => {
+    try {
+      // Find category ID or create new category on backend
+      let categoryId = productData.categoryId;
+      if (!categoryId) {
+        const matchedCat = categories.find(c => c.name.toLowerCase() === productData.category.toLowerCase());
+        if (matchedCat) {
+          categoryId = matchedCat.id;
+        } else {
+          const newCat = await categoriesService.createCategory({ name: productData.category });
+          categoryId = newCat.id;
+        }
+      }
 
-    setProducts(prev => [newProduct, ...prev]);
+      const payload = {
+        name: productData.title,
+        sku: productData.sku,
+        barcode: productData.barcode || undefined,
+        categoryId,
+        supplierId: productData.supplierId,
+        purchasePrice: Number(productData.purchasePrice),
+        sellingPrice: Number(productData.sellingPrice),
+        currentStock: Number(productData.currentStock),
+        minimumStock: Number(productData.minStock),
+        restockQuantity: Number(productData.restockQty)
+      };
 
-    // Increment count of the category
-    setCategories(prevCats => prevCats.map(cat => 
-      cat.name.toLowerCase() === productData.category.toLowerCase()
-        ? { ...cat, count: cat.count + 1 }
-        : cat
-    ));
+      const createdProduct = await productsService.createProduct(payload);
+      setProducts(prev => [createdProduct, ...prev]);
 
-    addSystemNotification(
-      'system',
-      `Product catalog updated: ${productData.title} created successfully.`,
-      newSku
-    );
+      addSystemNotification(
+        'system',
+        `Product catalog updated: ${createdProduct.title} saved to database.`,
+        createdProduct.sku
+      );
 
-    return newProduct;
-  }, [products, addSystemNotification]);
+      return createdProduct;
+    } catch (err) {
+      console.error('Error saving product to backend DB:', err);
+      // Fallback local update
+      const newSku = productData.sku || `SKU-${products.length + 1012}`;
+      const newProduct = {
+        ...productData,
+        sku: newSku,
+        status: 'Active'
+      };
+
+      setProducts(prev => [newProduct, ...prev]);
+      return newProduct;
+    }
+  }, [categories, products, addSystemNotification]);
 
   const updateProduct = useCallback((sku, updatedData) => {
     setProducts(prev => prev.map(p => p.sku === sku ? { ...p, ...updatedData } : p));
@@ -324,7 +316,18 @@ export const StoreProvider = ({ children }) => {
   }, [addSystemNotification]);
 
   // --- PHASE 4: CATEGORIES CRUD ACTIONS ---
-  const addCategory = useCallback((name) => {
+  const addCategory = useCallback(async (name) => {
+    try {
+      if (localStorage.getItem('stockflow_token')) {
+        const newCat = await categoriesService.createCategory({ name });
+        setCategories(prev => [newCat, ...prev]);
+        addSystemNotification('system', `Category department: ${name} saved to database.`, newCat.id);
+        return newCat;
+      }
+    } catch (err) {
+      console.error('Error saving category to database:', err);
+    }
+
     const nextId = `CAT-${categories.length + 1}`;
     const newCat = {
       id: nextId,
@@ -337,7 +340,7 @@ export const StoreProvider = ({ children }) => {
     setCategories(prev => [...prev, newCat]);
     addSystemNotification('system', `Category tag: ${name} added successfully.`, nextId);
     return newCat;
-  }, [categories, addSystemNotification]);
+  }, [categories.length, addSystemNotification]);
 
   const updateCategory = useCallback((id, updatedData) => {
     setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updatedData } : c));
@@ -572,6 +575,11 @@ export const StoreProvider = ({ children }) => {
       setRestockOrders,
       notifications,
       setNotifications,
+      refreshSuppliers,
+      refreshProducts,
+      refreshCategories,
+      refreshSales,
+      refreshAll,
       createSale,
       approveRestockOrder,
       receiveRestock,

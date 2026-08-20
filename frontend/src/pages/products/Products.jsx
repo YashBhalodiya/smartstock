@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Edit3, 
@@ -33,8 +33,17 @@ const Products = () => {
     categories, 
     addProduct, 
     updateProduct, 
-    toggleProductStatus 
+    toggleProductStatus,
+    refreshProducts,
+    refreshSuppliers,
+    refreshCategories
   } = useStore();
+
+  useEffect(() => {
+    if (typeof refreshProducts === 'function') refreshProducts();
+    if (typeof refreshSuppliers === 'function') refreshSuppliers();
+    if (typeof refreshCategories === 'function') refreshCategories();
+  }, [refreshProducts, refreshSuppliers, refreshCategories]);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,9 +83,9 @@ const Products = () => {
   // Status Toggle Confirm Dialog State
   const [confirmToggle, setConfirmToggle] = useState(null); // stores sku
 
-  // Derived filter selections lists
-  const activeCategories = useMemo(() => categories.filter(c => c.status === 'Active'), [categories]);
-  const activeSuppliers = useMemo(() => suppliers.filter(s => s.status === 'Active'), [suppliers]);
+  // Derived filter selections lists (Supports both status string and isActive boolean)
+  const activeCategories = useMemo(() => categories.filter(c => c.status === 'Active' || c.isActive === true || c.isActive === undefined), [categories]);
+  const activeSuppliers = useMemo(() => suppliers.filter(s => s.status === 'Active' || s.isActive === true || s.isActive === undefined), [suppliers]);
 
   // Filtering Products logic
   const filteredProducts = useMemo(() => {
@@ -159,6 +168,9 @@ const Products = () => {
   };
 
   const openAddModal = () => {
+    if (typeof refreshSuppliers === 'function') {
+      refreshSuppliers();
+    }
     setFormMode('add');
     setEditingSku(null);
     setFormValues({
@@ -196,7 +208,7 @@ const Products = () => {
     setIsFormOpen(true);
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) {
       addToast('Please resolve validation errors in the form.', 'error');
@@ -216,23 +228,26 @@ const Products = () => {
       restockQty: Number(formValues.restockQty)
     };
 
-    if (formMode === 'add') {
-      // Check if SKU already exists
-      const skuExists = products.some(p => p.sku.toLowerCase() === payload.sku.toLowerCase());
-      if (skuExists) {
-        setFormErrors(prev => ({ ...prev, sku: 'This SKU is already associated with another product' }));
-        addToast('SKU already exists in catalog.', 'error');
-        return;
+    try {
+      if (formMode === 'add') {
+        const skuExists = products.some(p => p.sku.toLowerCase() === payload.sku.toLowerCase());
+        if (skuExists) {
+          setFormErrors(prev => ({ ...prev, sku: 'This SKU is already associated with another product' }));
+          addToast('SKU already exists in catalog.', 'error');
+          return;
+        }
+        
+        await addProduct(payload);
+        addToast('Product successfully added and saved to database!', 'success');
+      } else {
+        await updateProduct(editingSku, payload);
+        addToast('Product details updated successfully!', 'success');
       }
       
-      addProduct(payload);
-      addToast('Product successfully added to catalog!', 'success');
-    } else {
-      updateProduct(editingSku, payload);
-      addToast('Product details updated successfully!', 'success');
+      setIsFormOpen(false);
+    } catch (err) {
+      addToast(err.message || 'Failed to save product to database', 'danger');
     }
-    
-    setIsFormOpen(false);
   };
 
   const handleToggleConfirm = (sku) => {

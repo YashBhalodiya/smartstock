@@ -6,6 +6,9 @@ import { errorHandler, AppError } from './middleware/errorHandler.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import suppliersRoutes from './modules/suppliers/suppliers.routes.js';
+import productsRoutes from './modules/products/products.routes.js';
+import categoriesRoutes from './modules/categories/categories.routes.js';
+import salesRoutes from './modules/sales/sales.routes.js';
 
 const app = express();
 
@@ -48,6 +51,9 @@ app.get('/api/health', async (req, res, next) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/suppliers', suppliersRoutes);
+app.use('/api/products', productsRoutes);
+app.use('/api/categories', categoriesRoutes);
+app.use('/api/sales', salesRoutes);
 
 // 404 Handler for undefined routes
 app.use((req, res, next) => {

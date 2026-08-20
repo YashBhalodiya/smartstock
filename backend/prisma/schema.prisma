@@ -75,21 +75,26 @@ model User {
   inventoryTransactions InventoryTransaction[] @relation("UserInventoryTransactions")
   notifications         Notification[]         @relation("UserNotifications")
   suppliers             Supplier[]             @relation("UserSuppliers")
+  products              Product[]              @relation("UserProducts")
+  categories            Category[]             @relation("UserCategories")
 
   @@map("users")
 }
 
 model Category {
   id          String   @id @default(uuid())
-  name        String   @unique
+  name        String
   description String?
+  createdBy   String?  @map("created_by")
   isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
-  products Product[]
+  createdByUser User?     @relation("UserCategories", fields: [createdBy], references: [id])
+  products      Product[]
 
+  @@index([createdBy])
   @@map("categories")
 }
 
@@ -125,11 +130,13 @@ model Product {
   currentStock    Int      @default(0) @map("current_stock")
   minimumStock    Int      @default(0) @map("minimum_stock")
   restockQuantity Int      @default(1) @map("restock_quantity")
+  createdBy       String?  @map("created_by")
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Relations
+  createdByUser         User?                  @relation("UserProducts", fields: [createdBy], references: [id])
   category              Category               @relation(fields: [categoryId], references: [id])
   supplier              Supplier               @relation(fields: [supplierId], references: [id])
   saleItems             SaleItem[]
@@ -138,6 +145,7 @@ model Product {
 
   @@index([categoryId])
   @@index([supplierId])
+  @@index([createdBy])
   @@map("products")
 }
 

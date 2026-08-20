@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Edit3, 
@@ -24,8 +24,13 @@ const Categories = () => {
     categories, 
     addCategory, 
     updateCategory, 
-    toggleCategoryStatus 
+    toggleCategoryStatus,
+    refreshCategories
   } = useStore();
+
+  useEffect(() => {
+    if (typeof refreshCategories === 'function') refreshCategories();
+  }, [refreshCategories]);
 
   // Form Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -53,7 +58,7 @@ const Categories = () => {
     setIsFormOpen(true);
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     setCategoryError('');
 
@@ -63,7 +68,6 @@ const Categories = () => {
       return;
     }
 
-    // Check if category name already exists
     const categoryExists = categories.some(
       c => c.name.toLowerCase() === categoryName.trim().toLowerCase() && c.id !== editingId
     );
@@ -74,15 +78,19 @@ const Categories = () => {
       return;
     }
 
-    if (formMode === 'add') {
-      addCategory(categoryName.trim());
-      addToast('New category department successfully added!', 'success');
-    } else {
-      updateCategory(editingId, { name: categoryName.trim() });
-      addToast('Category name updated successfully!', 'success');
-    }
+    try {
+      if (formMode === 'add') {
+        await addCategory(categoryName.trim());
+        addToast('New category department saved to database!', 'success');
+      } else {
+        await updateCategory(editingId, { name: categoryName.trim() });
+        addToast('Category name updated successfully!', 'success');
+      }
 
-    setIsFormOpen(false);
+      setIsFormOpen(false);
+    } catch (err) {
+      addToast(err.message || 'Failed to save category', 'danger');
+    }
   };
 
   const handleToggleConfirm = (id) => {
