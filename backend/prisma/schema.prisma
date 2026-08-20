@@ -1,0 +1,261 @@
+// Prisma Schema - Smart Inventory & Automated Restock Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum UserRole {
+  SHOPKEEPER
+  ADMIN
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+}
+
+enum SaleStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum TransactionType {
+  INITIAL_STOCK
+  SALE
+  RESTOCK
+  MANUAL_ADJUSTMENT
+  RETURN
+}
+
+enum RestockOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  RECEIVED
+  CANCELLED
+}
+
+enum NotificationType {
+  LOW_STOCK
+  RESTOCK_ORDER_CREATED
+  RESTOCK_ORDER_APPROVED
+  RESTOCK_EMAIL_SENT
+  RESTOCK_RECEIVED
+  SYSTEM
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(SHOPKEEPER)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  sales                 Sale[]                 @relation("UserSales")
+  restockOrdersCreated  RestockOrder[]         @relation("UserRestockOrders")
+  inventoryTransactions InventoryTransaction[] @relation("UserInventoryTransactions")
+  notifications         Notification[]         @relation("UserNotifications")
+
+  @@map("users")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  products Product[]
+
+  @@map("categories")
+}
+
+model Supplier {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  products      Product[]
+  restockOrders RestockOrder[]
+
+  @@map("suppliers")
+}
+
+model Product {
+  id              String   @id @default(uuid())
+  name            String
+  sku             String   @unique
+  barcode         String?  @unique
+  categoryId      String   @map("category_id")
+  supplierId      String   @map("supplier_id")
+  purchasePrice   Decimal  @map("purchase_price") @db.Decimal(12, 2)
+  sellingPrice    Decimal  @map("selling_price") @db.Decimal(12, 2)
+  currentStock    Int      @default(0) @map("current_stock")
+  minimumStock    Int      @default(0) @map("minimum_stock")
+  restockQuantity Int      @default(1) @map("restock_quantity")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  category              Category               @relation(fields: [categoryId], references: [id])
+  supplier              Supplier               @relation(fields: [supplierId], references: [id])
+  saleItems             SaleItem[]
+  inventoryTransactions InventoryTransaction[]
+  restockOrderItems     RestockOrderItem[]
+
+  @@index([categoryId])
+  @@index([supplierId])
+  @@map("products")
+}
+
+model Sale {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique @map("invoice_number")
+  subtotal      Decimal       @db.Decimal(12, 2)
+  discount      Decimal       @default(0) @db.Decimal(12, 2)
+  tax           Decimal       @default(0) @db.Decimal(12, 2)
+  totalAmount   Decimal       @map("total_amount") @db.Decimal(12, 2)
+  paymentMethod PaymentMethod @map("payment_method")
+  status        SaleStatus    @default(COMPLETED)
+  createdBy     String        @map("created_by")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  createdByUser User       @relation("UserSales", fields: [createdBy], references: [id])
+  items         SaleItem[]
+
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(uuid())
+  saleId    String  @map("sale_id")
+  productId String  @map("product_id")
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  discount  Decimal @default(0) @db.Decimal(12, 2)
+  tax       Decimal @default(0) @db.Decimal(12, 2)
+  subtotal  Decimal @db.Decimal(12, 2)
+
+  // Relations
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_items")
+}
+
+model InventoryTransaction {
+  id             String          @id @default(uuid())
+  productId      String          @map("product_id")
+  type           TransactionType
+  quantityChange Int             @map("quantity_change")
+  stockBefore    Int             @map("stock_before")
+  stockAfter     Int             @map("stock_after")
+  referenceType  String?         @map("reference_type")
+  referenceId    String?         @map("reference_id")
+  reason         String?
+  createdBy      String?         @map("created_by")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  product       Product @relation(fields: [productId], references: [id])
+  createdByUser User?   @relation("UserInventoryTransactions", fields: [createdBy], references: [id])
+
+  @@index([productId, createdAt])
+  @@map("inventory_transactions")
+}
+
+model RestockOrder {
+  id          String             @id @default(uuid())
+  orderNumber String             @unique @map("order_number")
+  supplierId  String             @map("supplier_id")
+  status      RestockOrderStatus @default(PENDING_APPROVAL)
+  totalAmount Decimal            @default(0) @map("total_amount") @db.Decimal(12, 2)
+  createdBy   String?            @map("created_by")
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  approvedAt  DateTime?          @map("approved_at") @db.Timestamptz(6)
+  sentAt      DateTime?          @map("sent_at") @db.Timestamptz(6)
+  receivedAt  DateTime?          @map("received_at") @db.Timestamptz(6)
+  cancelledAt DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  supplier      Supplier           @relation(fields: [supplierId], references: [id])
+  createdByUser User?              @relation("UserRestockOrders", fields: [createdBy], references: [id])
+  items         RestockOrderItem[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("restock_orders")
+}
+
+model RestockOrderItem {
+  id                String  @id @default(uuid())
+  restockOrderId    String  @map("restock_order_id")
+  productId         String  @map("product_id")
+  quantity          Int
+  unitPurchasePrice Decimal @map("unit_purchase_price") @db.Decimal(12, 2)
+  subtotal          Decimal @db.Decimal(12, 2)
+
+  // Relations
+  restockOrder RestockOrder @relation(fields: [restockOrderId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id])
+
+  @@index([restockOrderId])
+  @@index([productId])
+  @@map("restock_order_items")
+}
+
+model Notification {
+  id            String           @id @default(uuid())
+  userId        String           @map("user_id")
+  type          NotificationType
+  title         String
+  message       String
+  referenceType String?          @map("reference_type")
+  referenceId   String?          @map("reference_id")
+  isRead        Boolean          @default(false) @map("is_read")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt        DateTime?        @map("read_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
