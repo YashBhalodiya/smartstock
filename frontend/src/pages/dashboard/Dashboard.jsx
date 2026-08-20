@@ -36,7 +36,6 @@ import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../context/StoreContext';
 
-// Import central mock data
 import { 
   CHART_DATA_7D, 
   CHART_DATA_30D, 
@@ -44,14 +43,49 @@ import {
   CATEGORY_SHARE_DATA 
 } from '../../constants/mockData';
 
+const EMPTY_CHART_7D = [
+  { name: 'Mon', revenue: 0, sales: 0 },
+  { name: 'Tue', revenue: 0, sales: 0 },
+  { name: 'Wed', revenue: 0, sales: 0 },
+  { name: 'Thu', revenue: 0, sales: 0 },
+  { name: 'Fri', revenue: 0, sales: 0 },
+  { name: 'Sat', revenue: 0, sales: 0 },
+  { name: 'Sun', revenue: 0, sales: 0 }
+];
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const { products, sales, restockOrders } = useStore();
+  const { products = [], sales = [], restockOrders = [] } = useStore();
   const [chartRange, setChartRange] = useState('7d');
 
-  // Chart data range selector
+  // Authenticated shopkeeper details
+  const savedUser = JSON.parse(localStorage.getItem('stockflow_user') || '{}');
+  const shopkeeperName = savedUser.name || 'Shopkeeper';
+
+  const todayFormattedDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  // Calculate dynamic KPIs from store context
+  const totalProducts = products.length;
+  const lowStockProducts = products.filter(p => p.currentStock <= p.minStock);
+  const lowStockCount = lowStockProducts.length;
+  const criticalStockCount = products.filter(p => p.currentStock <= 5 && p.currentStock > 0).length;
+  const outOfStockCount = products.filter(p => p.currentStock === 0).length;
+  const pendingRestocksCount = restockOrders.filter(o => o.status === 'Pending Approval').length;
+
+  const todayRevenue = sales.reduce((acc, s) => acc + Number(s.totalAmount || 0), 0);
+  const todaySalesCount = sales.length;
+
+  // Chart data selector
   const getChartData = () => {
+    if (sales.length === 0 && products.length === 0) {
+      return EMPTY_CHART_7D;
+    }
     switch (chartRange) {
       case '30d': return CHART_DATA_30D;
       case '90d': return CHART_DATA_90D;
@@ -60,16 +94,6 @@ const Dashboard = () => {
         return CHART_DATA_7D;
     }
   };
-
-  // Derived dashboard metrics from mock database
-  const totalProducts = products.length;
-  
-  const lowStockProducts = products.filter(p => p.currentStock <= p.minStock);
-  const lowStockCount = lowStockProducts.length;
-  const criticalStockCount = products.filter(p => p.currentStock <= 5 && p.currentStock > 0).length;
-  const outOfStockCount = products.filter(p => p.currentStock === 0).length;
-  
-  const pendingRestocksCount = restockOrders.filter(o => o.status === 'Pending Approval').length;
 
   const handleQuickAction = (action, route) => {
     addToast(`Navigating to ${action}...`, 'info', 1500);
@@ -81,12 +105,12 @@ const Dashboard = () => {
       {/* Top Greeting & Date Headers */}
       <div className="dashboard-greet-section flex-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--neutral-900)' }}>Good morning, Shopkeeper</h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--neutral-900)' }}>Good morning, {shopkeeperName}</h1>
           <p className="text-muted text-sm" style={{ marginTop: '2px' }}>Here's what's happening with your store today.</p>
         </div>
         <div className="dashboard-date-badge flex-center">
           <Badge variant="primary" style={{ textTransform: 'none', padding: '6px 12px', fontSize: '13px' }}>
-            Wednesday, Aug 12, 2026
+            {todayFormattedDate}
           </Badge>
         </div>
       </div>
@@ -139,12 +163,15 @@ const Dashboard = () => {
                 <Receipt size={18} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>₹12,450</h2>
+            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>₹{todayRevenue.toLocaleString('en-IN')}</h2>
             <div className="flex-center" style={{ justifyContent: 'flex-start', gap: '6px', fontSize: '12px' }}>
-              <span className="text-success font-semibold flex-center" style={{ gap: '2px' }}>
-                <ArrowUpRight size={14} /> +12.5%
-              </span>
-              <span className="text-muted">from yesterday</span>
+              {sales.length > 0 ? (
+                <span className="text-success font-semibold flex-center" style={{ gap: '2px' }}>
+                  <ArrowUpRight size={14} /> Live Store Sales
+                </span>
+              ) : (
+                <span className="text-muted">No sales today</span>
+              )}
             </div>
           </CardBody>
         </Card>
@@ -158,12 +185,9 @@ const Dashboard = () => {
                 <TrendingUp size={18} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>87</h2>
+            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>{todaySalesCount}</h2>
             <div className="flex-center" style={{ justifyContent: 'flex-start', gap: '6px', fontSize: '12px' }}>
-              <span className="text-success font-semibold flex-center" style={{ gap: '2px' }}>
-                <ArrowUpRight size={14} /> +8.2%
-              </span>
-              <span className="text-muted">since yesterday</span>
+              <span className="text-muted">{todaySalesCount === 1 ? '1 checkout completed' : `${todaySalesCount} checkouts completed`}</span>
             </div>
           </CardBody>
         </Card>
@@ -267,42 +291,49 @@ const Dashboard = () => {
             <CardDescription>Product type distribution shares.</CardDescription>
           </CardHeader>
           <CardBody className="flex-center" style={{ flexDirection: 'column', gap: '20px' }}>
-            <div style={{ width: '100%', height: 160, display: 'flex', justifyContent: 'center' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={CATEGORY_SHARE_DATA}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={70}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {CATEGORY_SHARE_DATA.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip 
-                    formatter={(v) => [`${v}%`, 'Share']}
-                    contentStyle={{ fontSize: '11px', borderRadius: '4px' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            
-            {/* Category Legend list */}
-            <div className="donut-legend-list" style={{ width: '100%' }}>
-              {CATEGORY_SHARE_DATA.map((item, index) => (
-                <div key={item.name} className="legend-item flex-between" style={{ padding: '6px 0', fontSize: '12.5px', borderBottom: index < CATEGORY_SHARE_DATA.length - 1 ? '1px solid var(--neutral-100)' : 'none' }}>
-                  <div className="flex-center" style={{ gap: '8px' }}>
-                    <span className="legend-dot" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
-                    <span className="font-medium text-neutral-700">{item.name}</span>
-                  </div>
-                  <span className="font-semibold text-neutral-800">{item.value}%</span>
+            {products.length > 0 || sales.length > 0 ? (
+              <>
+                <div style={{ width: '100%', height: 160, display: 'flex', justifyContent: 'center' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={CATEGORY_SHARE_DATA}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {CATEGORY_SHARE_DATA.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <ChartTooltip 
+                        formatter={(v) => [`${v}%`, 'Share']}
+                        contentStyle={{ fontSize: '11px', borderRadius: '4px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
+                
+                <div className="donut-legend-list" style={{ width: '100%' }}>
+                  {CATEGORY_SHARE_DATA.map((item, index) => (
+                    <div key={item.name} className="legend-item flex-between" style={{ padding: '6px 0', fontSize: '12.5px', borderBottom: index < CATEGORY_SHARE_DATA.length - 1 ? '1px solid var(--neutral-100)' : 'none' }}>
+                      <div className="flex-center" style={{ gap: '8px' }}>
+                        <span className="legend-dot" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
+                        <span className="font-medium text-neutral-700">{item.name}</span>
+                      </div>
+                      <span className="font-semibold text-neutral-800">{item.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '40px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No product category sales recorded yet.
+              </div>
+            )}
           </CardBody>
         </Card>
       </div>
@@ -341,49 +372,57 @@ const Dashboard = () => {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {products.filter(p => p.currentStock <= p.minStock)
-                    .sort((a, b) => a.currentStock - b.currentStock)
-                    .slice(0, 4)
-                    .map((product) => {
-                      const isOutOfStock = product.currentStock === 0;
-                      const isCritical = product.currentStock <= 5 && !isOutOfStock;
-                      
-                      let badgeVariant = 'warning';
-                      let statusText = 'Low Stock';
-                      if (isOutOfStock) {
-                        badgeVariant = 'danger';
-                        statusText = 'Out of Stock';
-                      } else if (isCritical) {
-                        badgeVariant = 'danger';
-                        statusText = 'Critical';
-                      }
+                  {lowStockProducts.length > 0 ? (
+                    lowStockProducts
+                      .sort((a, b) => a.currentStock - b.currentStock)
+                      .slice(0, 4)
+                      .map((product) => {
+                        const isOutOfStock = product.currentStock === 0;
+                        const isCritical = product.currentStock <= 5 && !isOutOfStock;
+                        
+                        let badgeVariant = 'warning';
+                        let statusText = 'Low Stock';
+                        if (isOutOfStock) {
+                          badgeVariant = 'danger';
+                          statusText = 'Out of Stock';
+                        } else if (isCritical) {
+                          badgeVariant = 'danger';
+                          statusText = 'Critical';
+                        }
 
-                      return (
-                        <Tr key={product.sku}>
-                          <Td>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span className="font-semibold text-neutral-800">{product.title}</span>
-                              <span className="text-xs text-muted">{product.sku}</span>
-                            </div>
-                          </Td>
-                          <Td><span className={isOutOfStock || isCritical ? 'text-danger font-bold' : ''}>{product.currentStock}</span></Td>
-                          <Td>{product.minStock}</Td>
-                          <Td>
-                            <Badge variant={badgeVariant}>{statusText}</Badge>
-                          </Td>
-                          <Td align="right">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              style={{ padding: '4px 10px', fontSize: '12px' }}
-                              onClick={() => handleQuickAction(`Restock details for ${product.title}`, '/restock-orders')}
-                            >
-                              Review
-                            </Button>
-                          </Td>
-                        </Tr>
-                      );
-                    })}
+                        return (
+                          <Tr key={product.sku}>
+                            <Td>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span className="font-semibold text-neutral-800">{product.title}</span>
+                                <span className="text-xs text-muted">{product.sku}</span>
+                              </div>
+                            </Td>
+                            <Td><span className={isOutOfStock || isCritical ? 'text-danger font-bold' : ''}>{product.currentStock}</span></Td>
+                            <Td>{product.minStock}</Td>
+                            <Td>
+                              <Badge variant={badgeVariant}>{statusText}</Badge>
+                            </Td>
+                            <Td align="right">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                style={{ padding: '4px 10px', fontSize: '12px' }}
+                                onClick={() => handleQuickAction(`Restock details for ${product.title}`, '/restock-orders')}
+                              >
+                                Review
+                              </Button>
+                            </Td>
+                          </Tr>
+                        );
+                      })
+                  ) : (
+                    <Tr>
+                      <Td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--neutral-500)', fontSize: '13px' }}>
+                        No low stock alerts. Store product stock levels are healthy!
+                      </Td>
+                    </Tr>
+                  )}
                 </Tbody>
               </Table>
             </CardBody>
@@ -420,24 +459,32 @@ const Dashboard = () => {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {sales.slice(0, 3).map((sale) => (
-                    <Tr key={sale.invoiceNo}>
-                      <Td><span className="font-semibold text-primary">{sale.invoiceNo}</span></Td>
-                      <Td>{sale.itemsCount} items</Td>
-                      <Td><span className="font-semibold text-neutral-800">₹{sale.totalAmount}</span></Td>
-                      <Td>{sale.paymentMethod}</Td>
-                      <Td className="text-muted" style={{ fontSize: '12px' }}>{sale.date}</Td>
-                      <Td><Badge variant="success">Completed</Badge></Td>
-                      <Td align="right">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          icon={<Eye size={14} />} 
-                          onClick={() => addToast(`Opening details drawer for ${sale.invoiceNo}...`, 'info')}
-                        />
+                  {sales.length > 0 ? (
+                    sales.slice(0, 3).map((sale) => (
+                      <Tr key={sale.invoiceNo}>
+                        <Td><span className="font-semibold text-primary">{sale.invoiceNo}</span></Td>
+                        <Td>{sale.itemsCount} items</Td>
+                        <Td><span className="font-semibold text-neutral-800">₹{sale.totalAmount}</span></Td>
+                        <Td>{sale.paymentMethod}</Td>
+                        <Td className="text-muted" style={{ fontSize: '12px' }}>{sale.date}</Td>
+                        <Td><Badge variant="success">Completed</Badge></Td>
+                        <Td align="right">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            icon={<Eye size={14} />} 
+                            onClick={() => addToast(`Opening details drawer for ${sale.invoiceNo}...`, 'info')}
+                          />
+                        </Td>
+                      </Tr>
+                    ))
+                  ) : (
+                    <Tr>
+                      <Td colSpan={7} style={{ textAlign: 'center', padding: '24px', color: 'var(--neutral-500)', fontSize: '13px' }}>
+                        No sales transactions recorded yet. Click "New Sale" to process your first invoice.
                       </Td>
                     </Tr>
-                  ))}
+                  )}
                 </Tbody>
               </Table>
             </CardBody>
@@ -464,38 +511,44 @@ const Dashboard = () => {
             </CardHeader>
             <CardBody style={{ padding: '0 20px 20px' }}>
               <div className="restock-activity-feed" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {restockOrders.slice(0, 3).map((order) => {
-                  let statusColor = 'warning';
-                  if (order.status === 'Received') statusColor = 'success';
-                  if (order.status === 'Email Sent') statusColor = 'primary';
+                {restockOrders.length > 0 ? (
+                  restockOrders.slice(0, 3).map((order) => {
+                    let statusColor = 'warning';
+                    if (order.status === 'Received') statusColor = 'success';
+                    if (order.status === 'Email Sent') statusColor = 'primary';
 
-                  return (
-                    <div key={order.id} className="restock-feed-card flex-between" style={{ padding: '14px', border: '1px solid var(--neutral-200)', borderRadius: 'var(--border-radius-md)', backgroundColor: 'var(--neutral-50)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div className="flex-center" style={{ justifyContent: 'flex-start', gap: '8px' }}>
-                          <span className="font-bold text-neutral-800" style={{ fontSize: '13.5px' }}>{order.id}</span>
-                          <Badge variant={statusColor} style={{ fontSize: '9px', padding: '1px 5.5px' }}>
-                            {order.status}
-                          </Badge>
+                    return (
+                      <div key={order.id} className="restock-feed-card flex-between" style={{ padding: '14px', border: '1px solid var(--neutral-200)', borderRadius: 'var(--border-radius-md)', backgroundColor: 'var(--neutral-50)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div className="flex-center" style={{ justifyContent: 'flex-start', gap: '8px' }}>
+                            <span className="font-bold text-neutral-800" style={{ fontSize: '13.5px' }}>{order.id}</span>
+                            <Badge variant={statusColor} style={{ fontSize: '9px', padding: '1px 5.5px' }}>
+                              {order.status}
+                            </Badge>
+                          </div>
+                          <span className="text-sm font-semibold text-neutral-600">{order.supplierName}</span>
+                          <span className="text-xs text-muted">{order.itemsCount} products • ₹{order.totalAmount}</span>
                         </div>
-                        <span className="text-sm font-semibold text-neutral-600">{order.supplierName}</span>
-                        <span className="text-xs text-muted">{order.itemsCount} products • ₹{order.totalAmount}</span>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                          <span className="text-xs text-muted">{order.date}</span>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            style={{ padding: '4px' }}
+                            onClick={() => handleQuickAction(`Review details for ${order.id}`, `/restock-orders`)}
+                          >
+                            <ChevronRight size={16} />
+                          </Button>
+                        </div>
                       </div>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                        <span className="text-xs text-muted">{order.date}</span>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          style={{ padding: '4px' }}
-                          onClick={() => handleQuickAction(`Review details for ${order.id}`, `/restock-orders`)}
-                        >
-                          <ChevronRight size={16} />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <div style={{ padding: '30px 10px', textAlign: 'center', color: 'var(--neutral-500)', fontSize: '13px' }}>
+                    No restock purchase orders created yet.
+                  </div>
+                )}
               </div>
             </CardBody>
           </Card>

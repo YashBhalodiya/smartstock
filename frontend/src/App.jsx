@@ -19,18 +19,41 @@ import Reports from './pages/reports/Reports';
 import Settings from './pages/settings/Settings';
 import Sandbox from './pages/sandbox/Sandbox';
 
+import { authService } from './services/auth.service';
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('stockflow_auth') === 'true';
+    return localStorage.getItem('stockflow_auth') === 'true' && Boolean(localStorage.getItem('stockflow_token'));
   });
 
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('stockflow_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  React.useEffect(() => {
+    if (isAuthenticated && localStorage.getItem('stockflow_token')) {
+      authService.me()
+        .then(user => setCurrentUser(user))
+        .catch(() => {
+          authService.logout();
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+        });
+    }
+  }, [isAuthenticated]);
+
   const handleLogin = () => {
-    localStorage.setItem('stockflow_auth', 'true');
+    const saved = localStorage.getItem('stockflow_user');
+    if (saved) {
+      setCurrentUser(JSON.parse(saved));
+    }
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('stockflow_auth');
+    authService.logout();
+    setCurrentUser(null);
     setIsAuthenticated(false);
   };
 
@@ -51,7 +74,7 @@ function App() {
             <Route 
               path="/" 
               element={
-                isAuthenticated ? <MainLayout onLogout={handleLogout} /> : <Navigate to="/login" replace />
+                isAuthenticated ? <MainLayout currentUser={currentUser} onLogout={handleLogout} /> : <Navigate to="/login" replace />
               }
             >
               {/* Redirect root to dashboard */}

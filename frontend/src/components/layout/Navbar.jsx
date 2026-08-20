@@ -11,7 +11,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-const Navbar = ({ toggleSidebar, isCollapsed, onLogout }) => {
+const Navbar = ({ toggleSidebar, isCollapsed, onLogout, currentUser }) => {
   const location = useLocation();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -126,8 +126,8 @@ const Navbar = ({ toggleSidebar, isCollapsed, onLogout }) => {
               <User size={18} />
             </div>
             <div className="navbar-profile-info">
-              <span className="navbar-username">Shopkeeper</span>
-              <span className="navbar-role">Owner</span>
+              <span className="navbar-username">{currentUser?.name || 'Shopkeeper'}</span>
+              <span className="navbar-role">{currentUser?.role === 'SHOPKEEPER' ? 'Shopkeeper' : (currentUser?.role || 'Owner')}</span>
             </div>
             <ChevronDown size={14} className={`profile-chevron ${profileDropdownOpen ? 'rotated' : ''}`} />
           </button>
@@ -135,8 +135,8 @@ const Navbar = ({ toggleSidebar, isCollapsed, onLogout }) => {
           {profileDropdownOpen && (
             <div className="navbar-profile-dropdown">
               <div className="dropdown-header-info">
-                <span className="dropdown-name">Shopkeeper Admin</span>
-                <span className="dropdown-email">store@stockflow.com</span>
+                <span className="dropdown-name">{currentUser?.name || 'Shopkeeper'}</span>
+                <span className="dropdown-email">{currentUser?.email || ''}</span>
               </div>
               <ul className="dropdown-menu">
                 <li>

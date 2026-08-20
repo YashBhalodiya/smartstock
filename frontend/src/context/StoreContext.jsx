@@ -18,13 +18,27 @@ export const useStore = () => {
   return context;
 };
 
+const getInitialData = (demoData) => {
+  try {
+    const userStr = localStorage.getItem('stockflow_user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      // Seeded demo account gets seeded demo data; new accounts get clean empty state
+      if (user && user.email === 'store@stockflow.com') {
+        return demoData;
+      }
+    }
+  } catch (err) {}
+  return [];
+};
+
 export const StoreProvider = ({ children }) => {
-  const [products, setProducts] = useState(INITIAL_PRODUCTS);
-  const [suppliers, setSuppliers] = useState(INITIAL_SUPPLIERS);
-  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
-  const [sales, setSales] = useState(INITIAL_SALES);
-  const [restockOrders, setRestockOrders] = useState(INITIAL_RESTOCK_ORDERS);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [products, setProducts] = useState(() => getInitialData(INITIAL_PRODUCTS));
+  const [suppliers, setSuppliers] = useState(() => getInitialData(INITIAL_SUPPLIERS));
+  const [categories, setCategories] = useState(() => getInitialData(INITIAL_CATEGORIES));
+  const [sales, setSales] = useState(() => getInitialData(INITIAL_SALES));
+  const [restockOrders, setRestockOrders] = useState(() => getInitialData(INITIAL_RESTOCK_ORDERS));
+  const [notifications, setNotifications] = useState(() => getInitialData(INITIAL_NOTIFICATIONS));
 
   // Helper to add notification
   const addSystemNotification = useCallback((type, message, targetId) => {

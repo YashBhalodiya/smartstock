@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import Navbar from '../components/layout/Navbar';
 
-const MainLayout = ({ onLogout }) => {
+const MainLayout = ({ currentUser, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const toggleSidebar = () => {
@@ -16,6 +16,7 @@ const MainLayout = ({ onLogout }) => {
         isCollapsed={isCollapsed} 
         toggleSidebar={toggleSidebar} 
         onLogout={onLogout} 
+        currentUser={currentUser}
       />
       
       <div className="layout-content-area">
@@ -23,6 +24,7 @@ const MainLayout = ({ onLogout }) => {
           isCollapsed={isCollapsed} 
           toggleSidebar={toggleSidebar} 
           onLogout={onLogout} 
+          currentUser={currentUser}
         />
         
         <main className="layout-main-content">
