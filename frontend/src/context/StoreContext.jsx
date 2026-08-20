@@ -134,13 +134,31 @@ export const StoreProvider = ({ children }) => {
       if (localStorage.getItem('stockflow_token')) {
         const createdSale = await salesService.createSale({ cartItems, paymentMethod, discount });
         setSales(prev => [createdSale, ...prev]);
+
+        // Find which items in cart are now low stock
+        const lowStockAlerts = [];
+        for (const item of cartItems) {
+          const prod = products.find(p => p.sku === item.sku);
+          if (prod) {
+            const newStock = prod.currentStock - item.quantity;
+            if (newStock <= prod.minStock) {
+              lowStockAlerts.push({
+                sku: prod.sku,
+                title: prod.title,
+                currentStock: Math.max(0, newStock)
+              });
+            }
+          }
+        }
+
         if (typeof refreshProducts === 'function') {
           await refreshProducts();
         }
-        return createdSale;
+        return { invoice: createdSale, lowStockAlerts };
       }
     } catch (err) {
       console.error('Error saving sale to database:', err);
+      throw err;
     }
 
     // Local state fallback calculation if offline
@@ -170,8 +188,25 @@ export const StoreProvider = ({ children }) => {
     };
 
     setSales(prev => [newSale, ...prev]);
-    return newSale;
-  }, [sales.length, refreshProducts]);
+
+    // calculate lowStockAlerts for fallback
+    const lowStockAlerts = [];
+    setProducts(prevProducts => prevProducts.map(p => {
+      const cartItem = cartItems.find(item => item.sku === p.sku);
+      if (!cartItem) return p;
+      const updatedStock = Math.max(0, p.currentStock - cartItem.quantity);
+      if (updatedStock <= p.minStock) {
+        lowStockAlerts.push({
+          sku: p.sku,
+          title: p.title,
+          currentStock: updatedStock
+        });
+      }
+      return { ...p, currentStock: updatedStock };
+    }));
+
+    return { invoice: newSale, lowStockAlerts };
+  }, [sales.length, refreshProducts, products]);
 
   // Approves a pending restock order
   const approveRestockOrder = useCallback((orderId) => {

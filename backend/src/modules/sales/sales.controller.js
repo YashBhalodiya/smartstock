@@ -15,7 +15,7 @@ export async function createSale(req, res, next) {
 
 export async function getSales(req, res, next) {
   try {
-    const sales = await salesService.getSales(req.user.id);
+    const sales = await salesService.getSales(req.user.id, req.user.role);
     return res.status(200).json({
       success: true,
       message: 'Sales transactions retrieved successfully',

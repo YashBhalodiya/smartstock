@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  ShoppingCart, 
-  Trash2, 
-  Plus, 
-  Minus, 
-  Check, 
+import {
+  Search,
+  ShoppingCart,
+  Trash2,
+  Plus,
+  Minus,
+  Check,
   AlertTriangle,
   Receipt,
   Printer,
@@ -31,7 +31,7 @@ const NewSale = () => {
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  
+
   // Cart States
   const [cart, setCart] = useState([]);
   const [discount, setDiscount] = useState(0);
@@ -51,14 +51,14 @@ const NewSale = () => {
   // Filtered Products grid list
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
-      const matchesSearch = 
+      const matchesSearch =
         product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.barcode.includes(searchQuery);
-      
+
       const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
       const isActive = product.status === 'Active';
-      
+
       return matchesSearch && matchesCategory && isActive;
     });
   }, [products, searchQuery, selectedCategory]);
@@ -72,10 +72,10 @@ const NewSale = () => {
 
     setCart(prevCart => {
       const existingItemIndex = prevCart.findIndex(item => item.sku === product.sku);
-      
+
       if (existingItemIndex > -1) {
         const existingItem = prevCart[existingItemIndex];
-        
+
         if (existingItem.quantity + 1 > product.currentStock) {
           addToast(`Cannot add more. Only ${product.currentStock} units in stock.`, 'warning');
           return prevCart;
@@ -99,10 +99,10 @@ const NewSale = () => {
     setCart(prevCart => {
       return prevCart.map(item => {
         if (item.sku !== sku) return item;
-        
+
         const newQty = item.quantity + change;
         if (newQty <= 0) return null; // Marked for deletion
-        
+
         if (change > 0 && newQty > item.currentStock) {
           addToast(`Quantity cannot exceed available stock (${item.currentStock}).`, 'warning');
           return item;
@@ -133,31 +133,36 @@ const NewSale = () => {
   }, [subtotal, discount, tax]);
 
   // Checkout Handler
-  const handleCompleteSale = () => {
+  const handleCompleteSale = async () => {
     if (cart.length === 0) {
       addToast('Cart is empty. Add products to complete sale.', 'warning');
       return;
     }
 
     setCompleting(true);
-    
-    // Simulate minor network delay
-    setTimeout(() => {
-      try {
-        const { invoice, lowStockAlerts } = createSale(cart, paymentMethod, discount);
-        setLastInvoice(invoice);
-        setStockAlerts(lowStockAlerts);
-        
-        // Reset POS State
-        setCart([]);
-        setDiscount(0);
-        setCompleting(false);
-        addToast('Invoice checkout successfully completed!', 'success');
-      } catch (err) {
-        addToast('Checkout processing failed. Try again.', 'error');
-        setCompleting(false);
+
+    try {
+      // Simulate minor network delay
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const result = await createSale(cart, paymentMethod, discount);
+      if (!result) {
+        throw new Error('No result returned from checkout');
       }
-    }, 800);
+      const { invoice, lowStockAlerts } = result;
+      setLastInvoice(invoice);
+      setStockAlerts(lowStockAlerts || []);
+
+      // Reset POS State
+      setCart([]);
+      setDiscount(0);
+      addToast('Invoice checkout successfully completed!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast(err?.message || 'Checkout processing failed. Try again.', 'error');
+    } finally {
+      setCompleting(false);
+    }
   };
 
   const startNewSale = () => {
@@ -170,16 +175,16 @@ const NewSale = () => {
     return (
       <div className="pos-success-wrapper" style={{ animation: 'fadeIn var(--transition-fast) forwards' }}>
         <div style={{ maxWidth: '580px', margin: '0 auto' }}>
-          
+
           <Card className="pos-success-card">
             <CardBody className="flex-center" style={{ flexDirection: 'column', padding: '32px', textAlign: 'center' }}>
               <div className="pos-success-icon-wrapper flex-center bg-success-light text-success">
                 <Check size={40} />
               </div>
-              
+
               <h2 className="text-2xl font-bold" style={{ marginTop: '16px', color: 'var(--neutral-900)' }}>Sale Completed Successfully</h2>
               <p className="text-muted text-sm" style={{ marginTop: '4px' }}>Invoice has been generated and inventory stocks adjusted.</p>
-              
+
               {/* Receipt Summary Sheet */}
               <div className="pos-receipt-summary" style={{ width: '100%', marginTop: '24px', padding: '20px', border: '1px dashed var(--neutral-300)', borderRadius: 'var(--border-radius-md)', textAlign: 'left', backgroundColor: 'var(--neutral-50)' }}>
                 <div className="flex-between text-sm" style={{ marginBottom: '12px' }}>
@@ -215,10 +220,10 @@ const NewSale = () => {
                       </li>
                     ))}
                   </ul>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    icon={<ChevronRight size={14} />} 
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<ChevronRight size={14} />}
                     iconPosition="right"
                     style={{ marginTop: '12px', padding: '4px 8px', fontSize: '12px', color: 'var(--warning-hover)', textDecoration: 'underline' }}
                     onClick={() => navigate('/restock-orders')}
@@ -230,15 +235,15 @@ const NewSale = () => {
 
               {/* Success Actions */}
               <div className="flex-center" style={{ gap: '12px', width: '100%', marginTop: '32px' }}>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   icon={<Printer size={16} />}
                   onClick={() => addToast('Simulating Receipt Printing...', 'success')}
                 >
                   Print Invoice
                 </Button>
-                <Button 
-                  variant="primary" 
+                <Button
+                  variant="primary"
                   icon={<Plus size={16} />}
                   onClick={startNewSale}
                 >
@@ -255,22 +260,22 @@ const NewSale = () => {
 
   return (
     <div className="pos-page-wrapper">
-      
+
       {/* LEFT COLUMN: PRODUCT GRID */}
       <div className="pos-products-column">
-        
+
         {/* Filters and Searches */}
         <div className="pos-search-filter-card card" style={{ padding: '16px 20px', backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="flex-between flex-wrap" style={{ gap: '12px' }}>
             <h2 className="text-lg font-bold text-neutral-800">Product Catalog</h2>
-            <SearchBar 
+            <SearchBar
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onClear={() => setSearchQuery('')}
               placeholder="Search by SKU, barcode, title..."
             />
           </div>
-          
+
           {/* Category Chips Scroller */}
           <div className="pos-category-chips">
             {categories.map((cat) => (
@@ -302,8 +307,8 @@ const NewSale = () => {
               const isLowStock = product.currentStock <= product.minStock && !isOutOfStock;
 
               return (
-                <Card 
-                  key={product.sku} 
+                <Card
+                  key={product.sku}
                   className={`pos-product-card ${isOutOfStock ? 'out-of-stock-card' : ''}`}
                   onClick={() => !isOutOfStock && addToCart(product)}
                 >
@@ -319,7 +324,7 @@ const NewSale = () => {
                           <Badge variant="success" style={{ fontSize: '9px', padding: '1px 5px' }}>OK</Badge>
                         )}
                       </div>
-                      
+
                       <h4 className="font-semibold text-neutral-800" style={{ fontSize: '13.5px', marginTop: '6px', minHeight: '40px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {product.title}
                       </h4>
@@ -349,7 +354,7 @@ const NewSale = () => {
             </div>
             <Badge variant="primary">{cart.reduce((acc, i) => acc + i.quantity, 0)} Items</Badge>
           </CardHeader>
-          
+
           <CardBody className="pos-cart-body" style={{ padding: 0 }}>
             {cart.length === 0 ? (
               <div className="flex-center text-muted" style={{ height: '240px', flexDirection: 'column', gap: '8px', padding: '24px' }}>
@@ -377,7 +382,7 @@ const NewSale = () => {
                           <Plus size={12} />
                         </button>
                       </div>
-                      
+
                       <div style={{ width: '60px', textAlign: 'right' }}>
                         <span className="font-bold text-neutral-800" style={{ fontSize: '13.5px' }}>₹{item.sellingPrice * item.quantity}</span>
                       </div>
@@ -394,7 +399,7 @@ const NewSale = () => {
 
           {/* Checkout calculations */}
           <CardFooter className="pos-cart-footer" style={{ flexDirection: 'column', alignItems: 'stretch', padding: '20px', gap: '16px', backgroundColor: 'var(--neutral-50)' }}>
-            
+
             {/* Discount Inputs */}
             <div className="flex-between">
               <span className="text-sm text-neutral-600 font-medium">Flat Discount (₹)</span>
@@ -468,7 +473,7 @@ const NewSale = () => {
           </CardFooter>
         </Card>
       </div>
-      
+
     </div>
   );
 };
