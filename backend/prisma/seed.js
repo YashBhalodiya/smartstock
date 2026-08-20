@@ -80,7 +80,7 @@ async function main() {
 
   const supplierMap = new Map();
   for (const sup of suppliersData) {
-    const created = await prisma.supplier.create({ data: sup });
+    const created = await prisma.supplier.create({ data: { ...sup, createdBy: shopkeeper.id } });
     supplierMap.set(sup.name, created.id);
   }
   console.log(`🏢 Created ${supplierMap.size} Suppliers.`);

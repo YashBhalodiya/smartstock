@@ -36,7 +36,7 @@ services:
   # 3. Express Backend REST API Service
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: smartstock-backend
     restart: always
@@ -61,13 +61,13 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
+      - ./backend:/app
       - /app/node_modules
 
   # 4. React + Vite Frontend Web Application
   frontend:
     build:
-      context: ../frontend
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: smartstock-frontend
     restart: always
@@ -78,7 +78,7 @@ services:
     depends_on:
       - backend
     volumes:
-      - ../frontend:/app
+      - ./frontend:/app
       - /app/node_modules
 
 volumes:

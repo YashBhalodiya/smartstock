@@ -4,12 +4,14 @@ import { config } from './config/env.js';
 import { checkDatabaseConnection } from './config/prisma.js';
 import { errorHandler, AppError } from './middleware/errorHandler.js';
 
+import authRoutes from './modules/auth/auth.routes.js';
+import suppliersRoutes from './modules/suppliers/suppliers.routes.js';
+
 const app = express();
 
 // CORS Configuration (Allows frontend and API testing tools like Postman)
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. Postman, cURL, server-to-server)
     if (!origin) return callback(null, true);
     if (config.nodeEnv === 'development' || origin === config.frontendUrl) {
       return callback(null, true);
@@ -42,6 +44,10 @@ app.get('/api/health', async (req, res, next) => {
     next(err);
   }
 });
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/suppliers', suppliersRoutes);
 
 // 404 Handler for undefined routes
 app.use((req, res, next) => {
