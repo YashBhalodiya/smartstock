@@ -154,8 +154,9 @@ const Dashboard = () => {
 
       if (sale.items) {
         sale.items.forEach(item => {
-          const cat = item.category || 'Other';
-          const itemSubtotal = Number(item.subtotal || 0);
+          const matchedProduct = products.find(p => p.sku === item.sku || p.id === item.productId);
+          const cat = item.category || (matchedProduct ? matchedProduct.category : null) || 'Other';
+          const itemSubtotal = Number(item.subtotal || (Number(item.price || item.unitPrice || 0) * item.quantity));
           revenueMap[cat] = (revenueMap[cat] || 0) + itemSubtotal;
           totalCollected += itemSubtotal;
         });
@@ -189,7 +190,7 @@ const Dashboard = () => {
     });
 
     return aggregated.sort((a, b) => b.value - a.value);
-  }, [sales]);
+  }, [sales, products]);
 
   const handleQuickAction = (action, route) => {
     addToast(`Navigating to ${action}...`, 'info', 1500);

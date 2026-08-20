@@ -182,6 +182,7 @@ export const StoreProvider = ({ children }) => {
       items: cartItems.map(item => ({
         sku: item.sku,
         title: item.title,
+        category: item.category,
         quantity: item.quantity,
         price: item.sellingPrice
       }))
