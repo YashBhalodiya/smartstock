@@ -31,6 +31,8 @@ const Sales = () => {
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('All');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('All');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -74,9 +76,27 @@ const Sales = () => {
         paymentMethodFilter === 'All' || 
         paymentMethod.toUpperCase() === paymentMethodFilter.toUpperCase();
 
-      return matchesSearch && matchesPayment;
+      // Date Filter
+      let matchesDate = true;
+      if (selectedDate) {
+        const saleDateObj = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.date);
+        const yyyy = saleDateObj.getFullYear();
+        const mm = String(saleDateObj.getMonth() + 1).padStart(2, '0');
+        const dd = String(saleDateObj.getDate()).padStart(2, '0');
+        const saleLocalDateStr = `${yyyy}-${mm}-${dd}`;
+        matchesDate = saleLocalDateStr === selectedDate;
+      }
+
+      // Month Filter
+      let matchesMonth = true;
+      if (selectedMonth !== 'All') {
+        const saleDateObj = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.date);
+        matchesMonth = saleDateObj.getMonth().toString() === selectedMonth;
+      }
+
+      return matchesSearch && matchesPayment && matchesDate && matchesMonth;
     });
-  }, [sales, searchQuery, paymentMethodFilter]);
+  }, [sales, searchQuery, paymentMethodFilter, selectedDate, selectedMonth]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredSales.length / itemsPerPage);
@@ -165,8 +185,45 @@ const Sales = () => {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+              {/* Date Filter */}
+              <div style={{ minWidth: '150px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => { setSelectedDate(e.target.value); setCurrentPage(1); }}
+                  className="form-input"
+                  style={{ height: '40px', padding: '6px 10px', fontSize: '13px', border: '1px solid var(--neutral-300)', borderRadius: 'var(--border-radius-sm)' }}
+                  title="Filter by Specific Date"
+                />
+              </div>
+
+              {/* Month Filter */}
+              <div style={{ minWidth: '150px' }}>
+                <Select
+                  value={selectedMonth}
+                  onChange={(e) => { setSelectedMonth(e.target.value); setCurrentPage(1); }}
+                  options={[
+                    { value: 'All', label: 'All Months' },
+                    { value: '0', label: 'January' },
+                    { value: '1', label: 'February' },
+                    { value: '2', label: 'March' },
+                    { value: '3', label: 'April' },
+                    { value: '4', label: 'May' },
+                    { value: '5', label: 'June' },
+                    { value: '6', label: 'July' },
+                    { value: '7', label: 'August' },
+                    { value: '8', label: 'September' },
+                    { value: '9', label: 'October' },
+                    { value: '10', label: 'November' },
+                    { value: '11', label: 'December' }
+                  ]}
+                  containerClass="margin-zero-form"
+                  style={{ height: '40px', padding: '6px 14px' }}
+                />
+              </div>
+
               {/* Payment Method Filter */}
-              <div style={{ minWidth: '180px' }}>
+              <div style={{ minWidth: '200px' }}>
                 <Select
                   value={paymentMethodFilter}
                   onChange={(e) => { setPaymentMethodFilter(e.target.value); setCurrentPage(1); }}
@@ -180,6 +237,24 @@ const Sales = () => {
                   style={{ height: '40px', padding: '6px 14px' }}
                 />
               </div>
+
+              {/* Reset Filters Button */}
+              {(selectedDate || selectedMonth !== 'All' || paymentMethodFilter !== 'All' || searchQuery) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setSelectedMonth('All');
+                    setPaymentMethodFilter('All');
+                    setSearchQuery('');
+                    setCurrentPage(1);
+                  }}
+                  style={{ height: '40px', padding: '6px 14px' }}
+                >
+                  Reset
+                </Button>
+              )}
             </div>
           </div>
         </CardBody>

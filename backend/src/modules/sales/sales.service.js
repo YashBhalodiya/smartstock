@@ -144,6 +144,7 @@ function formatSale(s) {
     status: s.status,
     createdBy: s.createdBy,
     cashierName: s.createdByUser ? s.createdByUser.name : 'Unknown',
+    createdAt: s.createdAt,
     date: new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     items: s.items.map(i => ({
       id: i.id,
