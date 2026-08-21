@@ -10,17 +10,25 @@ export async function getCategories(userId) {
       ],
       isActive: true
     },
+    include: {
+      products: true
+    },
     orderBy: {
-      name: 'asc'
+      createdAt: 'asc'
     }
   });
 
-  return categories.map(c => ({
+  return categories.map((c, index) => ({
     id: c.id,
+    displayId: `CAT-${101 + index}`,
     name: c.name,
     description: c.description || '',
-    createdBy: c.createdBy,
-    isActive: c.isActive
+    count: c.products ? c.products.length : 0,
+    status: c.isActive ? 'Active' : 'Inactive',
+    isActive: c.isActive,
+    createdDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Aug 20, 2026',
+    createdAt: c.createdAt,
+    createdBy: c.createdBy
   }));
 }
 

@@ -22,6 +22,7 @@ const Categories = () => {
   const { addToast } = useToast();
   const { 
     categories, 
+    products,
     addCategory, 
     updateCategory, 
     toggleCategoryStatus,
@@ -139,18 +140,32 @@ const Categories = () => {
                 </Tr>
               </Thead>
               <Tbody>
-                {categories.map((category) => {
-                  const isInactive = category.status === 'Inactive';
+                {categories.map((category, index) => {
+                  const status = category.status || (category.isActive === false ? 'Inactive' : 'Active');
+                  const isInactive = status === 'Inactive';
+
+                  // Calculate formatted clean Category ID (CAT-101 style)
+                  const displayId = category.displayId || (category.id && category.id.startsWith('CAT-') ? category.id : `CAT-${101 + index}`);
+                  
+                  // Calculate dynamic product count for this category
+                  const productCount = products && Array.isArray(products)
+                    ? products.filter(p => p.category && p.category.toLowerCase() === category.name.toLowerCase()).length
+                    : (Number(category.count) || 0);
+
+                  // Calculate formatted created date
+                  const displayDate = category.createdDate || (category.createdAt 
+                    ? new Date(category.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                    : 'Aug 20, 2026');
 
                   return (
-                    <Tr key={category.id} style={isInactive ? { opacity: 0.6 } : {}}>
-                      <Td><span className="font-mono text-sm">{category.id}</span></Td>
+                    <Tr key={category.id || index} style={isInactive ? { opacity: 0.6 } : {}}>
+                      <Td><span className="font-mono text-sm font-semibold text-neutral-800">{displayId}</span></Td>
                       <Td><span className="font-semibold text-neutral-800">{category.name}</span></Td>
-                      <Td><span className="font-semibold text-neutral-700">{category.count} items</span></Td>
-                      <Td className="text-muted">{category.createdDate}</Td>
+                      <Td><span className="font-semibold text-neutral-700">{productCount} {productCount === 1 ? 'item' : 'items'}</span></Td>
+                      <Td className="text-muted">{displayDate}</Td>
                       <Td>
                         <Badge variant={isInactive ? 'neutral' : 'success'}>
-                          {category.status}
+                          {status}
                         </Badge>
                       </Td>
                       <Td align="right">

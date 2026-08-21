@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   AreaChart, 
@@ -24,8 +24,13 @@ import {
   AlertTriangle, 
   TrendingUp, 
   ChevronRight,
-  Eye
+  Eye,
+  Calendar,
+  CreditCard,
+  User,
+  Printer
 } from 'lucide-react';
+import Modal from '../../components/ui/Modal';
 
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -58,6 +63,7 @@ const Dashboard = () => {
   const { addToast } = useToast();
   const { products = [], sales = [], restockOrders = [] } = useStore();
   const [chartRange, setChartRange] = useState('7d');
+  const [selectedSale, setSelectedSale] = useState(null);
 
   // Authenticated shopkeeper details
   const savedUser = JSON.parse(localStorage.getItem('stockflow_user') || '{}');
@@ -78,22 +84,113 @@ const Dashboard = () => {
   const outOfStockCount = products.filter(p => p.currentStock === 0).length;
   const pendingRestocksCount = restockOrders.filter(o => o.status === 'Pending Approval').length;
 
-  const todayRevenue = sales.reduce((acc, s) => acc + Number(s.totalAmount || 0), 0);
-  const todaySalesCount = sales.length;
+  // Filter sales that happened today
+  const todaySales = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-  // Chart data selector
-  const getChartData = () => {
-    if (sales.length === 0 && products.length === 0) {
-      return EMPTY_CHART_7D;
+    return sales.filter(sale => {
+      const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.date);
+      return saleDate >= todayStart;
+    });
+  }, [sales]);
+
+  const todayRevenue = useMemo(() => {
+    return todaySales.reduce((acc, s) => acc + Number(s.totalAmount || 0), 0);
+  }, [todaySales]);
+
+  const todaySalesCount = todaySales.length;
+
+  // Generate dynamic chart data based on range
+  const chartData = useMemo(() => {
+    const numDays = chartRange === '90d' ? 90 : (chartRange === '30d' ? 30 : 7);
+    const data = [];
+    const now = new Date();
+
+    for (let i = numDays - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      
+      let label = '';
+      if (numDays === 7) {
+        label = d.toLocaleDateString('en-US', { weekday: 'short' });
+      } else {
+        label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+      
+      data.push({
+        dateStr: d.toDateString(),
+        name: label,
+        revenue: 0,
+        sales: 0
+      });
     }
-    switch (chartRange) {
-      case '30d': return CHART_DATA_30D;
-      case '90d': return CHART_DATA_90D;
-      case '7d':
-      default:
-        return CHART_DATA_7D;
+
+    sales.forEach(sale => {
+      const isCompleted = (sale.status || '').toUpperCase() === 'COMPLETED';
+      if (!isCompleted) return;
+
+      const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date(sale.date);
+      const saleDateStr = saleDate.toDateString();
+      
+      const dayData = data.find(d => d.dateStr === saleDateStr);
+      if (dayData) {
+        dayData.revenue += Number(sale.totalAmount || 0);
+        dayData.sales += 1;
+      }
+    });
+
+    return data;
+  }, [sales, chartRange]);
+
+  // Aggregate Category share dynamically from sales transactions
+  const categoryData = useMemo(() => {
+    const revenueMap = {};
+    let totalCollected = 0;
+
+    sales.forEach(sale => {
+      const isCompleted = (sale.status || '').toUpperCase() === 'COMPLETED';
+      if (!isCompleted) return;
+
+      if (sale.items) {
+        sale.items.forEach(item => {
+          const matchedProduct = products.find(p => p.sku === item.sku || p.id === item.productId);
+          const cat = item.category || (matchedProduct ? matchedProduct.category : null) || 'Other';
+          const itemSubtotal = Number(item.subtotal || (Number(item.price || item.unitPrice || 0) * item.quantity));
+          revenueMap[cat] = (revenueMap[cat] || 0) + itemSubtotal;
+          totalCollected += itemSubtotal;
+        });
+      }
+    });
+
+    const categoriesList = Object.keys(revenueMap);
+    if (categoriesList.length === 0) {
+      return [];
     }
-  };
+
+    const colors = [
+      'var(--primary)',
+      'var(--success)',
+      'var(--warning)',
+      'var(--danger)',
+      '#8884d8',
+      '#82ca9d',
+      '#a4de6c'
+    ];
+
+    const aggregated = categoriesList.map((cat, index) => {
+      const val = revenueMap[cat];
+      const pct = totalCollected > 0 ? Math.round((val / totalCollected) * 100) : 0;
+      return {
+        name: cat,
+        value: pct,
+        rawRevenue: val,
+        color: colors[index % colors.length]
+      };
+    });
+
+    return aggregated.sort((a, b) => b.value - a.value);
+  }, [sales, products]);
 
   const handleQuickAction = (action, route) => {
     addToast(`Navigating to ${action}...`, 'info', 1500);
@@ -257,7 +354,7 @@ const Dashboard = () => {
           <CardBody>
             <div style={{ width: '100%', height: 320 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={getChartData()} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.2}/>
@@ -291,13 +388,13 @@ const Dashboard = () => {
             <CardDescription>Product type distribution shares.</CardDescription>
           </CardHeader>
           <CardBody className="flex-center" style={{ flexDirection: 'column', gap: '20px' }}>
-            {products.length > 0 || sales.length > 0 ? (
+            {categoryData.length > 0 ? (
               <>
                 <div style={{ width: '100%', height: 160, display: 'flex', justifyContent: 'center' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={CATEGORY_SHARE_DATA}
+                        data={categoryData}
                         cx="50%"
                         cy="50%"
                         innerRadius={50}
@@ -305,7 +402,7 @@ const Dashboard = () => {
                         paddingAngle={3}
                         dataKey="value"
                       >
-                        {CATEGORY_SHARE_DATA.map((entry, index) => (
+                        {categoryData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -318,8 +415,8 @@ const Dashboard = () => {
                 </div>
                 
                 <div className="donut-legend-list" style={{ width: '100%' }}>
-                  {CATEGORY_SHARE_DATA.map((item, index) => (
-                    <div key={item.name} className="legend-item flex-between" style={{ padding: '6px 0', fontSize: '12.5px', borderBottom: index < CATEGORY_SHARE_DATA.length - 1 ? '1px solid var(--neutral-100)' : 'none' }}>
+                  {categoryData.map((item, index) => (
+                    <div key={item.name} className="legend-item flex-between" style={{ padding: '6px 0', fontSize: '12.5px', borderBottom: index < categoryData.length - 1 ? '1px solid var(--neutral-100)' : 'none' }}>
                       <div className="flex-center" style={{ gap: '8px' }}>
                         <span className="legend-dot" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color }} />
                         <span className="font-medium text-neutral-700">{item.name}</span>
@@ -473,7 +570,7 @@ const Dashboard = () => {
                             variant="ghost" 
                             size="sm" 
                             icon={<Eye size={14} />} 
-                            onClick={() => addToast(`Opening details drawer for ${sale.invoiceNo}...`, 'info')}
+                            onClick={() => setSelectedSale(sale)}
                           />
                         </Td>
                       </Tr>
@@ -553,8 +650,105 @@ const Dashboard = () => {
             </CardBody>
           </Card>
         </div>
-
       </div>
+
+      {/* DETAILED RECEIPT / INVOICE MODAL */}
+      {selectedSale && (
+        <Modal
+          isOpen={true}
+          onClose={() => setSelectedSale(null)}
+          title={`Invoice Receipt: ${selectedSale.invoiceNo}`}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setSelectedSale(null)}>Close</Button>
+              <Button 
+                variant="primary" 
+                icon={<Printer size={16} />}
+                onClick={() => { addToast(`Simulating Print Invoice for ${selectedSale.invoiceNo}...`, 'success'); setSelectedSale(null); }}
+              >
+                Print Receipt
+              </Button>
+            </>
+          }
+        >
+          <div className="pos-receipt-summary" style={{ width: '100%', padding: '4px 0', textAlign: 'left' }}>
+            {/* Header info */}
+            <div style={{ borderBottom: '1px dashed var(--neutral-300)', paddingBottom: '16px', marginBottom: '16px' }}>
+              <div className="flex-between text-sm" style={{ marginBottom: '8px' }}>
+                <span className="text-muted flex-center" style={{ gap: '6px' }}><Receipt size={14} /> Invoice Reference</span>
+                <span className="font-bold text-neutral-800">{selectedSale.invoiceNo}</span>
+              </div>
+              <div className="flex-between text-sm" style={{ marginBottom: '8px' }}>
+                <span className="text-muted flex-center" style={{ gap: '6px' }}><Calendar size={14} /> Date &amp; Time</span>
+                <span className="font-semibold text-neutral-800">{selectedSale.date}</span>
+              </div>
+              <div className="flex-between text-sm" style={{ marginBottom: '8px' }}>
+                <span className="text-muted flex-center" style={{ gap: '6px' }}><User size={14} /> Cashier Desk</span>
+                <span className="font-medium text-neutral-800">{selectedSale.cashierName || 'System'}</span>
+              </div>
+              <div className="flex-between text-sm">
+                <span className="text-muted flex-center" style={{ gap: '6px' }}><CreditCard size={14} /> Payment Channel</span>
+                <span className="font-bold text-primary">{selectedSale.paymentMethod}</span>
+              </div>
+            </div>
+
+            {/* Line Items Table */}
+            <div style={{ marginBottom: '16px' }}>
+              <span className="text-xs font-bold text-muted" style={{ letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>LINE ITEMS</span>
+              <div style={{ border: '1px solid var(--neutral-200)', borderRadius: 'var(--border-radius-sm)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--neutral-50)', borderBottom: '1px solid var(--neutral-200)' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: '600', color: 'var(--neutral-600)' }}>Product</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '600', color: 'var(--neutral-600)', width: '60px' }}>Qty</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '600', color: 'var(--neutral-600)', width: '90px' }}>Price</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '600', color: 'var(--neutral-600)', width: '100px' }}>Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSale.items && selectedSale.items.map((item, idx) => (
+                      <tr key={item.id || idx} style={{ borderBottom: idx < selectedSale.items.length - 1 ? '1px solid var(--neutral-200)' : 'none' }}>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span className="font-semibold text-neutral-800">{item.title}</span>
+                            <span className="text-xs text-muted" style={{ fontFamily: 'monospace' }}>SKU: {item.sku}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', color: 'var(--neutral-700)' }}>{item.quantity}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--neutral-700)' }}>₹{(item.unitPrice || item.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600', color: 'var(--neutral-800)' }}>₹{(item.subtotal || ((item.unitPrice || item.price || 0) * item.quantity)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Calculations Breakdown */}
+            <div style={{ borderTop: '1px dashed var(--neutral-300)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+              <div className="flex-between text-muted">
+                <span>Subtotal</span>
+                <span>₹{Number(selectedSale.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              {Number(selectedSale.discount || 0) > 0 && (
+                <div className="flex-between text-danger font-medium">
+                  <span>Store Discount</span>
+                  <span>-₹{Number(selectedSale.discount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className="flex-between text-muted" style={{ backgroundColor: 'var(--neutral-100)', padding: '6px 10px', borderRadius: 'var(--border-radius-sm)', margin: '2px 0' }}>
+                <span>GST (Inclusive)</span>
+                <span className="font-semibold text-neutral-700">₹{Number(selectedSale.tax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs text-muted" style={{ fontWeight: 'normal' }}>(Included)</span></span>
+              </div>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--neutral-200)', margin: '4px 0' }} />
+              <div className="flex-between font-bold" style={{ fontSize: '16px', color: 'var(--neutral-800)' }}>
+                <span>Grand Total</span>
+                <span className="text-success" style={{ fontSize: '18px' }}>₹{Number(selectedSale.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

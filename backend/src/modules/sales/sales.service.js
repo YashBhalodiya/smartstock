@@ -16,9 +16,9 @@ export async function createSale(userId, data) {
   }
 
   const numericDiscount = Number(discount) || 0;
-  const taxableSubtotal = Math.max(0, subtotal - numericDiscount);
-  const tax = Math.round((taxableSubtotal * 0.05) * 100) / 100;
-  const totalAmount = taxableSubtotal + tax;
+  const totalAmount = Math.max(0, subtotal - numericDiscount);
+  // Inclusive GST Tax Portion (default 18% inclusive tax) for transparency & reporting
+  const tax = Math.round((totalAmount * (18 / 118)) * 100) / 100;
 
   const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
 
@@ -98,6 +98,7 @@ export async function createSale(userId, data) {
     return tx.sale.findUnique({
       where: { id: createdSale.id },
       include: {
+        createdByUser: true,
         items: {
           include: {
             product: true
@@ -110,12 +111,12 @@ export async function createSale(userId, data) {
   return formatSale(sale);
 }
 
-export async function getSales(userId) {
+export async function getSales(userId, userRole) {
+  const whereClause = userRole === 'ADMIN' ? {} : { createdBy: userId };
   const sales = await prisma.sale.findMany({
-    where: {
-      createdBy: userId
-    },
+    where: whereClause,
     include: {
+      createdByUser: true,
       items: {
         include: {
           product: true
@@ -142,6 +143,8 @@ function formatSale(s) {
     itemsCount: s.items.reduce((acc, item) => acc + item.quantity, 0),
     status: s.status,
     createdBy: s.createdBy,
+    cashierName: s.createdByUser ? s.createdByUser.name : 'Unknown',
+    createdAt: s.createdAt,
     date: new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     items: s.items.map(i => ({
       id: i.id,

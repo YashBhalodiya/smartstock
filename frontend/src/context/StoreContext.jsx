@@ -11,6 +11,7 @@ import { suppliersService } from '../services/suppliers.service';
 import { productsService } from '../services/products.service';
 import { categoriesService } from '../services/categories.service';
 import { salesService } from '../services/sales.service';
+import { getCartGstBreakdown } from '../utils/gstUtils';
 
 const StoreContext = createContext(null);
 
@@ -134,13 +135,31 @@ export const StoreProvider = ({ children }) => {
       if (localStorage.getItem('stockflow_token')) {
         const createdSale = await salesService.createSale({ cartItems, paymentMethod, discount });
         setSales(prev => [createdSale, ...prev]);
+
+        // Find which items in cart are now low stock
+        const lowStockAlerts = [];
+        for (const item of cartItems) {
+          const prod = products.find(p => p.sku === item.sku);
+          if (prod) {
+            const newStock = prod.currentStock - item.quantity;
+            if (newStock <= prod.minStock) {
+              lowStockAlerts.push({
+                sku: prod.sku,
+                title: prod.title,
+                currentStock: Math.max(0, newStock)
+              });
+            }
+          }
+        }
+
         if (typeof refreshProducts === 'function') {
           await refreshProducts();
         }
-        return createdSale;
+        return { invoice: createdSale, lowStockAlerts };
       }
     } catch (err) {
       console.error('Error saving sale to database:', err);
+      throw err;
     }
 
     // Local state fallback calculation if offline
@@ -148,8 +167,9 @@ export const StoreProvider = ({ children }) => {
     const itemsCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
     const subtotal = cartItems.reduce((acc, item) => acc + (item.sellingPrice * item.quantity), 0);
     const calculatedDiscount = Number(discount) || 0;
-    const tax = Math.round(((subtotal - calculatedDiscount) * 0.05) * 100) / 100;
-    const totalAmount = subtotal - calculatedDiscount + tax;
+    const totalAmount = Math.max(0, subtotal - calculatedDiscount);
+    const gstInfo = getCartGstBreakdown(cartItems, calculatedDiscount);
+    const tax = gstInfo.inclusiveTax;
 
     const newSale = {
       invoiceNo,
@@ -164,14 +184,32 @@ export const StoreProvider = ({ children }) => {
       items: cartItems.map(item => ({
         sku: item.sku,
         title: item.title,
+        category: item.category,
         quantity: item.quantity,
         price: item.sellingPrice
       }))
     };
 
     setSales(prev => [newSale, ...prev]);
-    return newSale;
-  }, [sales.length, refreshProducts]);
+
+    // calculate lowStockAlerts for fallback
+    const lowStockAlerts = [];
+    setProducts(prevProducts => prevProducts.map(p => {
+      const cartItem = cartItems.find(item => item.sku === p.sku);
+      if (!cartItem) return p;
+      const updatedStock = Math.max(0, p.currentStock - cartItem.quantity);
+      if (updatedStock <= p.minStock) {
+        lowStockAlerts.push({
+          sku: p.sku,
+          title: p.title,
+          currentStock: updatedStock
+        });
+      }
+      return { ...p, currentStock: updatedStock };
+    }));
+
+    return { invoice: newSale, lowStockAlerts };
+  }, [sales.length, refreshProducts, products]);
 
   // Approves a pending restock order
   const approveRestockOrder = useCallback((orderId) => {
