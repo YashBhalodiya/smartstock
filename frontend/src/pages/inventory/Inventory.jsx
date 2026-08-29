@@ -5,14 +5,10 @@ import {
   AlertTriangle, 
   RefreshCcw, 
   Edit3, 
-  Search,
-  ArrowUpRight,
-  TrendingDown,
-  Activity,
-  Plus
+  Activity
 } from 'lucide-react';
 
-import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '../../components/ui/Card';
+import { Card, CardBody } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';

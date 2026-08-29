@@ -1,24 +1,19 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search,
   ShoppingCart,
   Trash2,
   Plus,
   Minus,
   Check,
   AlertTriangle,
-  Receipt,
   Printer,
-  ChevronRight,
-  TrendingUp,
-  Boxes
+  ChevronRight
 } from 'lucide-react';
 
-import { Card, CardHeader, CardTitle, CardDescription, CardBody, CardFooter } from '../../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardBody, CardFooter } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import Input from '../../components/ui/Input';
 import SearchBar from '../../components/ui/SearchBar';
 import { useStore } from '../../context/StoreContext';
 import { useToast } from '../../context/ToastContext';

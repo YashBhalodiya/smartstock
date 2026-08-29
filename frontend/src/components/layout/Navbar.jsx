@@ -28,45 +28,25 @@ const Navbar = ({ toggleSidebar, isCollapsed, onLogout, currentUser }) => {
     };
   }, []);
 
-  // Simple path to breadcrumb resolution helper
   const getBreadcrumbs = () => {
     const path = location.pathname;
-    if (path === '/' || path === '/dashboard') {
-      return [{ label: 'Dashboard', link: '/dashboard' }];
-    }
-    
-    const crumbs = [];
-    crumbs.push({ label: 'Home', link: '/dashboard' });
+    if (path === '/' || path === '/dashboard') return [{ label: 'Dashboard', link: '/dashboard' }];
 
-    if (path.startsWith('/sales')) {
-      crumbs.push({ label: 'Sales', link: '/sales' });
-      if (path === '/sales/new') {
-        crumbs.push({ label: 'New Sale', link: '/sales/new' });
-      }
-    } else if (path.startsWith('/products')) {
-      crumbs.push({ label: 'Inventory', link: '/products' });
-      crumbs.push({ label: 'Products', link: '/products' });
-    } else if (path.startsWith('/categories')) {
-      crumbs.push({ label: 'Inventory', link: '/products' });
-      crumbs.push({ label: 'Categories', link: '/categories' });
-    } else if (path.startsWith('/inventory')) {
-      crumbs.push({ label: 'Inventory', link: '/products' });
-      crumbs.push({ label: 'Stock Health', link: '/inventory' });
-    } else if (path.startsWith('/restock-orders')) {
-      crumbs.push({ label: 'Restock Orders', link: '/restock-orders' });
-    } else if (path.startsWith('/suppliers')) {
-      crumbs.push({ label: 'Suppliers', link: '/suppliers' });
-    } else if (path.startsWith('/notifications')) {
-      crumbs.push({ label: 'Notifications', link: '/notifications' });
-    } else if (path.startsWith('/reports')) {
-      crumbs.push({ label: 'Reports', link: '/reports' });
-    } else if (path.startsWith('/settings')) {
-      crumbs.push({ label: 'Settings', link: '/settings' });
-    } else if (path.startsWith('/sandbox')) {
-      crumbs.push({ label: 'UI Sandbox', link: '/sandbox' });
-    }
-    
-    return crumbs;
+    const map = {
+      '/sales/new': [{ label: 'Home', link: '/dashboard' }, { label: 'Sales', link: '/sales' }, { label: 'New Sale', link: '/sales/new' }],
+      '/sales': [{ label: 'Home', link: '/dashboard' }, { label: 'Sales', link: '/sales' }],
+      '/products': [{ label: 'Home', link: '/dashboard' }, { label: 'Inventory', link: '/products' }, { label: 'Products', link: '/products' }],
+      '/categories': [{ label: 'Home', link: '/dashboard' }, { label: 'Inventory', link: '/products' }, { label: 'Categories', link: '/categories' }],
+      '/inventory': [{ label: 'Home', link: '/dashboard' }, { label: 'Inventory', link: '/products' }, { label: 'Stock Health', link: '/inventory' }],
+      '/restock-orders': [{ label: 'Home', link: '/dashboard' }, { label: 'Restock Orders', link: '/restock-orders' }],
+      '/suppliers': [{ label: 'Home', link: '/dashboard' }, { label: 'Suppliers', link: '/suppliers' }],
+      '/notifications': [{ label: 'Home', link: '/dashboard' }, { label: 'Notifications', link: '/notifications' }],
+      '/reports': [{ label: 'Home', link: '/dashboard' }, { label: 'Reports', link: '/reports' }],
+      '/settings': [{ label: 'Home', link: '/dashboard' }, { label: 'Settings', link: '/settings' }],
+      '/sandbox': [{ label: 'Home', link: '/dashboard' }, { label: 'UI Sandbox', link: '/sandbox' }]
+    };
+
+    return map[path] || [{ label: 'Home', link: '/dashboard' }];
   };
 
   const breadcrumbs = getBreadcrumbs();

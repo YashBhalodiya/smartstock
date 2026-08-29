@@ -45,70 +45,25 @@ export const StoreProvider = ({ children }) => {
   const [restockOrders, setRestockOrders] = useState(() => getInitialData(INITIAL_RESTOCK_ORDERS));
   const [notifications, setNotifications] = useState(() => getInitialData(INITIAL_NOTIFICATIONS));
 
-  // Automatically fetch shopkeeper's suppliers from backend API
-  const refreshSuppliers = useCallback(async () => {
+  const fetchEntity = async (serviceFn, setter, label) => {
     if (localStorage.getItem('stockflow_token')) {
       try {
-        const data = await suppliersService.getSuppliers();
-        if (Array.isArray(data)) {
-          setSuppliers(data);
-        }
+        const data = await serviceFn();
+        if (Array.isArray(data)) setter(data);
       } catch (err) {
-        console.error('Failed to load shopkeeper suppliers:', err);
+        console.error(`Failed to load ${label}:`, err);
       }
     }
-  }, []);
+  };
 
-  // Fetch shopkeeper's products from backend API
-  const refreshProducts = useCallback(async () => {
-    if (localStorage.getItem('stockflow_token')) {
-      try {
-        const data = await productsService.getProducts();
-        if (Array.isArray(data)) {
-          setProducts(data);
-        }
-      } catch (err) {
-        console.error('Failed to load shopkeeper products:', err);
-      }
-    }
-  }, []);
-
-  // Fetch shopkeeper's categories from backend API
-  const refreshCategories = useCallback(async () => {
-    if (localStorage.getItem('stockflow_token')) {
-      try {
-        const data = await categoriesService.getCategories();
-        if (Array.isArray(data)) {
-          setCategories(data);
-        }
-      } catch (err) {
-        console.error('Failed to load categories:', err);
-      }
-    }
-  }, []);
-
-  // Fetch shopkeeper's sales transactions from backend API
-  const refreshSales = useCallback(async () => {
-    if (localStorage.getItem('stockflow_token')) {
-      try {
-        const data = await salesService.getSales();
-        if (Array.isArray(data)) {
-          setSales(data);
-        }
-      } catch (err) {
-        console.error('Failed to load sales transactions:', err);
-      }
-    }
-  }, []);
+  const refreshSuppliers = useCallback(() => fetchEntity(suppliersService.getSuppliers, setSuppliers, 'suppliers'), []);
+  const refreshProducts = useCallback(() => fetchEntity(productsService.getProducts, setProducts, 'products'), []);
+  const refreshCategories = useCallback(() => fetchEntity(categoriesService.getCategories, setCategories, 'categories'), []);
+  const refreshSales = useCallback(() => fetchEntity(salesService.getSales, setSales, 'sales'), []);
 
   const refreshAll = useCallback(async () => {
     if (localStorage.getItem('stockflow_token')) {
-      await Promise.all([
-        refreshSuppliers(),
-        refreshProducts(),
-        refreshCategories(),
-        refreshSales()
-      ]);
+      await Promise.all([refreshSuppliers(), refreshProducts(), refreshCategories(), refreshSales()]);
     }
   }, [refreshSuppliers, refreshProducts, refreshCategories, refreshSales]);
 

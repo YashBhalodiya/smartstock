@@ -2,31 +2,20 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('stockflow_token');
-
   const headers = {
     'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers
   };
 
-  const config = {
-    ...options,
-    headers
-  };
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+  const data = await response.json();
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errorMessage = data?.message || data?.error?.message || 'An error occurred';
-      throw new Error(errorMessage);
-    }
-
-    return data;
-  } catch (err) {
-    throw err;
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error?.message || 'An error occurred');
   }
+
+  return data;
 }
 
 export const api = {

@@ -1,7 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  History, 
-  Search, 
   TrendingUp, 
   Receipt, 
   ShoppingBag, 
@@ -12,7 +10,7 @@ import {
   CreditCard
 } from 'lucide-react';
 
-import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '../../components/ui/Card';
+import { Card, CardBody } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Select from '../../components/ui/Select';
