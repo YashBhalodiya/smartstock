@@ -14,9 +14,23 @@ export const useToast = () => {
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback((message, type = 'info', duration = 4000) => {
+  const addToast = useCallback((msgOrObj, typeParam = 'info', durationParam = 4000) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prevToasts) => [...prevToasts, { id, message, type, duration }]);
+    let title = '';
+    let message = '';
+    let type = typeParam;
+    let duration = durationParam;
+
+    if (typeof msgOrObj === 'object' && msgOrObj !== null) {
+      title = msgOrObj.title || '';
+      message = msgOrObj.message || msgOrObj.text || title || '';
+      type = msgOrObj.type || typeParam;
+      duration = msgOrObj.duration || durationParam;
+    } else {
+      message = String(msgOrObj || '');
+    }
+
+    setToasts((prevToasts) => [...prevToasts, { id, title, message, type, duration }]);
     
     setTimeout(() => {
       removeToast(id);
@@ -50,7 +64,10 @@ export const ToastProvider = ({ children }) => {
           <div key={toast.id} className={`toast-item toast-${toast.type || 'info'}`}>
             <div className="toast-content-wrapper">
               {getIcon(toast.type)}
-              <span className="toast-message">{toast.message}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                {toast.title && <strong style={{ fontSize: '13px', lineHeight: '1.2' }}>{toast.title}</strong>}
+                <span className="toast-message" style={{ fontSize: '12px' }}>{toast.message}</span>
+              </div>
             </div>
             <button className="toast-close-btn" onClick={() => removeToast(toast.id)}>
               <X size={16} />

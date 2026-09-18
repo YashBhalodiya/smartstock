@@ -238,7 +238,9 @@ export const StoreProvider = ({ children }) => {
     try {
       if (localStorage.getItem('stockflow_token')) {
         const updated = await restockService.approveRestockOrder(orderId);
-        setRestockOrders(prev => prev.map(o => o.id === orderId ? updated : o));
+        if (updated) {
+          setRestockOrders(prev => prev.map(o => (o.id === orderId || o.orderNumber === orderId || o.id === updated.id) ? { ...o, ...updated, status: 'Email Sent', rawStatus: 'SENT' } : o));
+        }
         addSystemNotification(
           'restock_approved',
           `✓ Order Approved: Restock purchase email sent to supplier.`,
@@ -252,7 +254,7 @@ export const StoreProvider = ({ children }) => {
 
     // Local fallback
     setRestockOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
+      if (order.id !== orderId && order.orderNumber !== orderId) return order;
       
       addSystemNotification(
         'restock_approved', 
@@ -263,59 +265,121 @@ export const StoreProvider = ({ children }) => {
       return {
         ...order,
         status: 'Email Sent',
+        rawStatus: 'SENT',
         date: 'Today, Email Sent'
       };
     }));
   }, [addSystemNotification]);
 
   // Marks restock order items received and updates stock counts
-  const receiveRestock = useCallback(async (orderId, receivedQuantities) => {
-    try {
-      if (localStorage.getItem('stockflow_token')) {
-        const updated = await restockService.receiveRestockOrder(orderId);
-        setRestockOrders(prev => prev.map(o => o.id === orderId ? updated : o));
-        if (typeof refreshProducts === 'function') await refreshProducts();
-        addSystemNotification(
-          'restock_received',
-          `✓ Inventory Updated: Restock items received for ${orderId}.`,
-          orderId
-        );
-        return updated;
+  const receiveRestock = useCallback(async (orderId, receivedQuantities, orderObj) => {
+    // 1. Locate the restock order in state or from passed parameter
+    const targetOrder = orderObj || restockOrders.find(o => o.id === orderId || o.orderNumber === orderId);
+    const orderItems = targetOrder ? (targetOrder.products || targetOrder.items || []) : [];
+
+    // Helper: calculate quantity to add to a given product
+    const getReplenishQty = (prod) => {
+      if (receivedQuantities) {
+        if (prod.sku && receivedQuantities[prod.sku] !== undefined) return Number(receivedQuantities[prod.sku]);
+        if (prod.id && receivedQuantities[prod.id] !== undefined) return Number(receivedQuantities[prod.id]);
       }
-    } catch (err) {
-      console.error('Failed to mark restock order received via API:', err);
+      const match = orderItems.find(item => 
+        (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
+        (item.productId && (item.productId === prod.id || item.productId === prod.productId)) ||
+        (item.id && (item.id === prod.id || item.id === prod.productId))
+      );
+      if (match) {
+        return Number(match.orderQty || match.quantity || 0);
+      }
+      return 0;
+    };
+
+    let apiUpdated = null;
+    let apiSuccess = false;
+
+    if (localStorage.getItem('stockflow_token')) {
+      try {
+        apiUpdated = await restockService.receiveRestockOrder(orderId);
+        apiSuccess = true;
+      } catch (err) {
+        console.error('Failed to mark restock order received via API:', err);
+      }
     }
 
-    setRestockOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-
-      // 1. Update product stock levels
-      setProducts(prevProducts => prevProducts.map(product => {
-        const receivedQty = receivedQuantities ? receivedQuantities[product.sku] : 0;
-        if (!receivedQty) return product;
+    // 2. Immediately update product stock counts in state
+    setProducts(prevProducts => prevProducts.map(prod => {
+      const replenishQty = getReplenishQty(prod);
+      if (replenishQty > 0) {
         return {
-          ...product,
-          currentStock: product.currentStock + Number(receivedQty)
+          ...prod,
+          currentStock: Number(prod.currentStock || 0) + replenishQty
         };
-      }));
-
-      // 2. Decrement active orders for supplier
-      setSuppliers(prevSuppliers => prevSuppliers.map(s => 
-        s.id === order.supplierId ? { ...s, activeOrders: Math.max(0, s.activeOrders - 1) } : s
-      ));
-
-      addSystemNotification(
-        'restock_received', 
-        `✓ Inventory Updated: Restock items received for ${orderId}.`, 
-        orderId
-      );
-
-      return {
-        ...order,
-        status: 'Received'
-      };
+      }
+      return prod;
     }));
-  }, [addSystemNotification, refreshProducts]);
+
+    // 3. Mark the restock order as Received in state
+    setRestockOrders(prev => prev.map(order => {
+      if (order.id === orderId || order.orderNumber === orderId || (apiUpdated && order.id === apiUpdated.id)) {
+        if (apiUpdated) {
+          return {
+            ...order,
+            ...apiUpdated,
+            status: 'Received',
+            rawStatus: 'RECEIVED',
+            receivedAt: apiUpdated.receivedAt || new Date().toISOString(),
+            products: (order.products || []).map(p => {
+              const replenish = getReplenishQty(p);
+              return {
+                ...p,
+                currentStock: Number(p.currentStock || 0) + replenish
+              };
+            })
+          };
+        }
+        return {
+          ...order,
+          status: 'Received',
+          rawStatus: 'RECEIVED',
+          receivedAt: new Date().toISOString(),
+          products: (order.products || []).map(p => {
+            const replenish = getReplenishQty(p);
+            return {
+              ...p,
+              currentStock: Number(p.currentStock || 0) + replenish
+            };
+          })
+        };
+      }
+      return order;
+    }));
+
+    // 4. Decrement active orders for supplier
+    const supplierId = targetOrder?.supplierId;
+    if (supplierId) {
+      setSuppliers(prev => prev.map(s => 
+        (s.id === supplierId || s.name === targetOrder.supplierName)
+          ? { ...s, activeOrders: Math.max(0, (s.activeOrders || 0) - 1) }
+          : s
+      ));
+    }
+
+    // 5. Add system notification
+    const orderDisplayId = targetOrder?.orderNumber || targetOrder?.id || orderId;
+    addSystemNotification(
+      'restock_received',
+      `✓ Inventory Updated: Restock items received for #${orderDisplayId}. Stock levels replenished.`,
+      orderId
+    );
+
+    // 6. If API succeeded, trigger background refresh
+    if (apiSuccess) {
+      if (typeof refreshProducts === 'function') await refreshProducts();
+      if (typeof refreshRestockOrders === 'function') await refreshRestockOrders();
+    }
+
+    return apiUpdated || targetOrder;
+  }, [restockOrders, addSystemNotification, refreshProducts, refreshRestockOrders]);
 
   const markNotificationAsRead = useCallback((id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));

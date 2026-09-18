@@ -65,7 +65,10 @@ export async function createProduct(userId, data) {
 export async function getProducts(userId) {
   const products = await prisma.product.findMany({
     where: {
-      createdBy: userId,
+      OR: [
+        { createdBy: userId },
+        { createdBy: null }
+      ],
       isActive: true
     },
     include: {
@@ -84,7 +87,10 @@ export async function getProductById(userId, productId) {
   const product = await prisma.product.findFirst({
     where: {
       id: productId,
-      createdBy: userId
+      OR: [
+        { createdBy: userId },
+        { createdBy: null }
+      ]
     },
     include: {
       category: true,
@@ -103,7 +109,10 @@ export async function updateProduct(userId, productId, data) {
   const existing = await prisma.product.findFirst({
     where: {
       id: productId,
-      createdBy: userId
+      OR: [
+        { createdBy: userId },
+        { createdBy: null }
+      ]
     }
   });
 
@@ -131,7 +140,10 @@ export async function deleteProduct(userId, productId) {
   const existing = await prisma.product.findFirst({
     where: {
       id: productId,
-      createdBy: userId
+      OR: [
+        { createdBy: userId },
+        { createdBy: null }
+      ]
     }
   });
 

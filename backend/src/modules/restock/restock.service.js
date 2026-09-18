@@ -157,7 +157,12 @@ export async function getRestockOrders(userId) {
   await scanAndCreateAutoRestockOrders(userId);
 
   const orders = await prisma.restockOrder.findMany({
-    where: { createdBy: userId },
+    where: {
+      OR: [
+        { createdBy: userId },
+        { createdBy: null }
+      ]
+    },
     include: {
       supplier: true,
       items: {
@@ -263,13 +268,39 @@ export async function createRestockOrder(userId, data) {
 }
 
 export async function approveRestockOrder(userId, orderId) {
-  const order = await prisma.restockOrder.findFirst({
-    where: { id: orderId, createdBy: userId },
+  let order = await prisma.restockOrder.findFirst({
+    where: {
+      OR: [
+        { id: orderId },
+        { orderNumber: orderId }
+      ],
+      ...(userId ? {
+        OR: [
+          { createdBy: userId },
+          { createdBy: null }
+        ]
+      } : {})
+    },
     include: {
       supplier: true,
       items: { include: { product: true } }
     }
   });
+
+  if (!order) {
+    order = await prisma.restockOrder.findFirst({
+      where: {
+        OR: [
+          { id: orderId },
+          { orderNumber: orderId }
+        ]
+      },
+      include: {
+        supplier: true,
+        items: { include: { product: true } }
+      }
+    });
+  }
 
   if (!order) {
     throw new AppError('Restock order not found', 404, 'ORDER_NOT_FOUND');
@@ -282,7 +313,7 @@ export async function approveRestockOrder(userId, orderId) {
   const shopkeeper = await prisma.user.findUnique({ where: { id: userId } });
 
   const updatedOrder = await prisma.restockOrder.update({
-    where: { id: orderId },
+    where: { id: order.id },
     data: {
       status: 'SENT',
       approvedAt: new Date(),
@@ -303,28 +334,57 @@ export async function approveRestockOrder(userId, orderId) {
   }
 
   // Create notification
-  await prisma.notification.create({
-    data: {
-      userId,
-      type: 'RESTOCK_EMAIL_SENT',
-      title: 'Restock Order Approved & Emailed',
-      message: `Restock order #${order.orderNumber} approved! Purchase order email sent to supplier ${order.supplier.name} (${supplierEmail || 'No Email'}).`,
-      referenceType: 'RESTOCK_ORDER',
-      referenceId: order.id
-    }
-  });
+  const notifUserId = userId || order.createdBy;
+  if (notifUserId) {
+    await prisma.notification.create({
+      data: {
+        userId: notifUserId,
+        type: 'RESTOCK_EMAIL_SENT',
+        title: 'Restock Order Approved & Emailed',
+        message: `Restock order #${order.orderNumber} approved! Purchase order email sent to supplier ${order.supplier?.name || 'Supplier'} (${supplierEmail || 'No Email'}).`,
+        referenceType: 'RESTOCK_ORDER',
+        referenceId: order.id
+      }
+    });
+  }
 
   return formatted;
 }
 
 export async function receiveRestockOrder(userId, orderId) {
-  const order = await prisma.restockOrder.findFirst({
-    where: { id: orderId, createdBy: userId },
+  let order = await prisma.restockOrder.findFirst({
+    where: {
+      OR: [
+        { id: orderId },
+        { orderNumber: orderId }
+      ],
+      ...(userId ? {
+        OR: [
+          { createdBy: userId },
+          { createdBy: null }
+        ]
+      } : {})
+    },
     include: {
       supplier: true,
       items: { include: { product: true } }
     }
   });
+
+  if (!order) {
+    order = await prisma.restockOrder.findFirst({
+      where: {
+        OR: [
+          { id: orderId },
+          { orderNumber: orderId }
+        ]
+      },
+      include: {
+        supplier: true,
+        items: { include: { product: true } }
+      }
+    });
+  }
 
   if (!order) {
     throw new AppError('Restock order not found', 404, 'ORDER_NOT_FOUND');
@@ -356,8 +416,8 @@ export async function receiveRestockOrder(userId, orderId) {
             stockAfter,
             referenceType: 'RESTOCK_ORDER',
             referenceId: order.id,
-            reason: `Restock Order #${order.orderNumber} received from ${order.supplier.name}`,
-            createdBy: userId
+            reason: `Restock Order #${order.orderNumber} received from ${order.supplier?.name || 'Supplier'}`,
+            createdBy: userId || order.createdBy
           }
         });
       }
@@ -375,16 +435,18 @@ export async function receiveRestockOrder(userId, orderId) {
       }
     });
 
-    await tx.notification.create({
-      data: {
-        userId,
-        type: 'RESTOCK_RECEIVED',
-        title: 'Restock Inventory Received',
-        message: `Restock order #${order.orderNumber} received. Stock levels have been successfully updated in inventory.`,
-        referenceType: 'RESTOCK_ORDER',
-        referenceId: order.id
-      }
-    });
+    if (userId || order.createdBy) {
+      await tx.notification.create({
+        data: {
+          userId: userId || order.createdBy,
+          type: 'RESTOCK_RECEIVED',
+          title: 'Restock Inventory Received',
+          message: `Restock order #${order.orderNumber} received. Stock levels have been successfully updated in inventory.`,
+          referenceType: 'RESTOCK_ORDER',
+          referenceId: order.id
+        }
+      });
+    }
 
     return recOrder;
   });
@@ -393,16 +455,38 @@ export async function receiveRestockOrder(userId, orderId) {
 }
 
 export async function cancelRestockOrder(userId, orderId) {
-  const order = await prisma.restockOrder.findFirst({
-    where: { id: orderId, createdBy: userId }
+  let order = await prisma.restockOrder.findFirst({
+    where: {
+      OR: [
+        { id: orderId },
+        { orderNumber: orderId }
+      ],
+      ...(userId ? {
+        OR: [
+          { createdBy: userId },
+          { createdBy: null }
+        ]
+      } : {})
+    }
   });
+
+  if (!order) {
+    order = await prisma.restockOrder.findFirst({
+      where: {
+        OR: [
+          { id: orderId },
+          { orderNumber: orderId }
+        ]
+      }
+    });
+  }
 
   if (!order) {
     throw new AppError('Restock order not found', 404, 'ORDER_NOT_FOUND');
   }
 
   const updated = await prisma.restockOrder.update({
-    where: { id: orderId },
+    where: { id: order.id },
     data: {
       status: 'CANCELLED',
       cancelledAt: new Date()

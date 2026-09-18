@@ -64,13 +64,14 @@ const RestockOrders = () => {
 
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
-    return restockOrders.filter(order => {
+    return (restockOrders || []).filter(order => {
+      if (!order) return false;
       const matchesSearch = 
         (order.id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (order.supplierName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (order.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (order.products || []).some(p => (p.title || '').toLowerCase().includes(searchQuery.toLowerCase()));
+        (order.products || []).some(p => (p && (p.title || p.name || '')).toLowerCase().includes(searchQuery.toLowerCase()));
 
       let matchesTab = true;
       if (activeTab === 'Pending Approval') {
@@ -94,7 +95,8 @@ const RestockOrders = () => {
     let receivedCount = 0;
     let totalValue = 0;
 
-    restockOrders.forEach(o => {
+    (restockOrders || []).forEach(o => {
+      if (!o) return;
       const status = o.status;
       const rawStatus = o.rawStatus;
       const val = Number(o.totalAmount || 0);
@@ -145,7 +147,7 @@ const RestockOrders = () => {
     if (!receivingOrder) return;
     setIsSubmittingReceive(true);
     try {
-      await receiveRestock(receivingOrder.id);
+      await receiveRestock(receivingOrder.id, null, receivingOrder);
       addToast({
         type: 'success',
         title: 'Inventory Stock Updated',
@@ -653,7 +655,7 @@ const RestockOrders = () => {
               </ul>
             </div>
 
-            <p style="color: #64748b; font-size: 12px;">
+            <p style={{ color: '#64748b', fontSize: '12px' }}>
               * Standard inventory transactions will be logged and store stock counts refreshed automatically.
             </p>
           </div>
