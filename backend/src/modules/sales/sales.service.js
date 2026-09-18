@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { checkAndCreateAutoRestockOrder } from '../restock/restock.service.js';
 
 export async function createSale(userId, data) {
   const { cartItems, paymentMethod = 'CASH', discount = 0 } = data;
@@ -93,6 +94,11 @@ export async function createSale(userId, data) {
           createdBy: userId
         }
       });
+
+      // Automatically trigger restock order creation if product goes out of stock (0 units)
+      if (stockAfter === 0) {
+        await checkAndCreateAutoRestockOrder(tx, product.id, userId);
+      }
     }
 
     return tx.sale.findUnique({

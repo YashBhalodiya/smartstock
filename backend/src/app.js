@@ -9,6 +9,7 @@ import suppliersRoutes from './modules/suppliers/suppliers.routes.js';
 import productsRoutes from './modules/products/products.routes.js';
 import categoriesRoutes from './modules/categories/categories.routes.js';
 import salesRoutes from './modules/sales/sales.routes.js';
+import restockRoutes from './modules/restock/restock.routes.js';
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use('/api/suppliers', suppliersRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/sales', salesRoutes);
+app.use('/api/restock', restockRoutes);
 
 // 404 Handler for undefined routes
 app.use((req, res, next) => {

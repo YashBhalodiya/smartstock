@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { checkAndCreateAutoRestockOrder } from '../restock/restock.service.js';
 
 export async function createProduct(userId, data) {
   // Check SKU uniqueness per shopkeeper
@@ -51,6 +52,8 @@ export async function createProduct(userId, data) {
           createdBy: userId
         }
       });
+    } else {
+      await checkAndCreateAutoRestockOrder(tx, newProd.id, userId);
     }
 
     return newProd;
@@ -116,6 +119,10 @@ export async function updateProduct(userId, productId, data) {
       supplier: true
     }
   });
+
+  if (updated.currentStock === 0) {
+    await checkAndCreateAutoRestockOrder(prisma, updated.id, userId);
+  }
 
   return formatProduct(updated);
 }

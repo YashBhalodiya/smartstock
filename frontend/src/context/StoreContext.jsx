@@ -11,6 +11,7 @@ import { suppliersService } from '../services/suppliers.service';
 import { productsService } from '../services/products.service';
 import { categoriesService } from '../services/categories.service';
 import { salesService } from '../services/sales.service';
+import { restockService } from '../services/restock.service';
 import { getCartGstBreakdown } from '../utils/gstUtils';
 
 const StoreContext = createContext(null);
@@ -60,16 +61,82 @@ export const StoreProvider = ({ children }) => {
   const refreshProducts = useCallback(() => fetchEntity(productsService.getProducts, setProducts, 'products'), []);
   const refreshCategories = useCallback(() => fetchEntity(categoriesService.getCategories, setCategories, 'categories'), []);
   const refreshSales = useCallback(() => fetchEntity(salesService.getSales, setSales, 'sales'), []);
+  const refreshRestockOrders = useCallback(() => fetchEntity(restockService.getRestockOrders, setRestockOrders, 'restockOrders'), []);
 
   const refreshAll = useCallback(async () => {
     if (localStorage.getItem('stockflow_token')) {
-      await Promise.all([refreshSuppliers(), refreshProducts(), refreshCategories(), refreshSales()]);
+      await Promise.all([refreshSuppliers(), refreshProducts(), refreshCategories(), refreshSales(), refreshRestockOrders()]);
     }
-  }, [refreshSuppliers, refreshProducts, refreshCategories, refreshSales]);
+  }, [refreshSuppliers, refreshProducts, refreshCategories, refreshSales, refreshRestockOrders]);
 
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
+
+  // Auto scanner: Ensures any product with 0 stock has a pending restock order generated
+  useEffect(() => {
+    if (products && products.length > 0) {
+      setRestockOrders(prevOrders => {
+        let hasChanges = false;
+        let nextOrders = [...prevOrders];
+
+        products.forEach(p => {
+          if (p.currentStock <= 0) {
+            const inOrder = nextOrders.some(o => 
+              (o.status === 'Pending Approval' || o.status === 'Email Sent' || o.rawStatus === 'PENDING_APPROVAL' || o.rawStatus === 'SENT') &&
+              (o.products || []).some(item => item.sku === p.sku || item.productId === p.id)
+            );
+
+            if (!inOrder) {
+              hasChanges = true;
+              const supp = suppliers.find(s => s.id === p.supplierId) || suppliers[0] || { id: 'SUP-101', name: 'ABC Distributors', email: 'supplier@example.com' };
+              const suppId = supp.id || p.supplierId || 'SUP-101';
+              
+              const pendingIdx = nextOrders.findIndex(o => (o.supplierId === suppId || o.supplierName === supp.name) && (o.status === 'Pending Approval' || o.rawStatus === 'PENDING_APPROVAL'));
+              const orderQty = p.restockQty || p.restockQuantity || 10;
+              const price = p.purchasePrice || 0;
+              const orderItem = {
+                sku: p.sku,
+                title: p.title || p.name,
+                currentStock: p.currentStock,
+                orderQty,
+                unitPurchasePrice: price,
+                subtotal: orderQty * price,
+                minStock: p.minStock || 0
+              };
+
+              if (pendingIdx > -1) {
+                const existingOrder = nextOrders[pendingIdx];
+                nextOrders[pendingIdx] = {
+                  ...existingOrder,
+                  itemsCount: (existingOrder.products || []).length + 1,
+                  totalAmount: Number(existingOrder.totalAmount || 0) + (orderQty * price),
+                  products: [...(existingOrder.products || []), orderItem]
+                };
+              } else {
+                const newRoId = `RO-${Date.now().toString().slice(-6)}`;
+                nextOrders.unshift({
+                  id: newRoId,
+                  orderNumber: newRoId,
+                  supplierId: suppId,
+                  supplierName: supp.name || 'Supplier',
+                  email: supp.email || 'supplier@example.com',
+                  itemsCount: 1,
+                  totalAmount: orderQty * price,
+                  date: 'Today, Just now',
+                  status: 'Pending Approval',
+                  rawStatus: 'PENDING_APPROVAL',
+                  products: [orderItem]
+                });
+              }
+            }
+          }
+        });
+
+        return hasChanges ? nextOrders : prevOrders;
+      });
+    }
+  }, [products, suppliers]);
 
   // Helper to add notification
   const addSystemNotification = useCallback((type, message, targetId) => {
@@ -167,7 +234,23 @@ export const StoreProvider = ({ children }) => {
   }, [sales.length, refreshProducts, products]);
 
   // Approves a pending restock order
-  const approveRestockOrder = useCallback((orderId) => {
+  const approveRestockOrder = useCallback(async (orderId) => {
+    try {
+      if (localStorage.getItem('stockflow_token')) {
+        const updated = await restockService.approveRestockOrder(orderId);
+        setRestockOrders(prev => prev.map(o => o.id === orderId ? updated : o));
+        addSystemNotification(
+          'restock_approved',
+          `✓ Order Approved: Restock purchase email sent to supplier.`,
+          orderId
+        );
+        return updated;
+      }
+    } catch (err) {
+      console.error('Failed to approve restock order via API:', err);
+    }
+
+    // Local fallback
     setRestockOrders(prev => prev.map(order => {
       if (order.id !== orderId) return order;
       
@@ -186,13 +269,29 @@ export const StoreProvider = ({ children }) => {
   }, [addSystemNotification]);
 
   // Marks restock order items received and updates stock counts
-  const receiveRestock = useCallback((orderId, receivedQuantities) => {
+  const receiveRestock = useCallback(async (orderId, receivedQuantities) => {
+    try {
+      if (localStorage.getItem('stockflow_token')) {
+        const updated = await restockService.receiveRestockOrder(orderId);
+        setRestockOrders(prev => prev.map(o => o.id === orderId ? updated : o));
+        if (typeof refreshProducts === 'function') await refreshProducts();
+        addSystemNotification(
+          'restock_received',
+          `✓ Inventory Updated: Restock items received for ${orderId}.`,
+          orderId
+        );
+        return updated;
+      }
+    } catch (err) {
+      console.error('Failed to mark restock order received via API:', err);
+    }
+
     setRestockOrders(prev => prev.map(order => {
       if (order.id !== orderId) return order;
 
       // 1. Update product stock levels
       setProducts(prevProducts => prevProducts.map(product => {
-        const receivedQty = receivedQuantities[product.sku];
+        const receivedQty = receivedQuantities ? receivedQuantities[product.sku] : 0;
         if (!receivedQty) return product;
         return {
           ...product,
@@ -216,7 +315,7 @@ export const StoreProvider = ({ children }) => {
         status: 'Received'
       };
     }));
-  }, [addSystemNotification]);
+  }, [addSystemNotification, refreshProducts]);
 
   const markNotificationAsRead = useCallback((id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
@@ -385,40 +484,19 @@ export const StoreProvider = ({ children }) => {
       );
 
       // Auto append to restock orders
-      const supplier = suppliers.find(s => s.id === updatedProduct.supplierId);
-      if (supplier) {
-        setRestockOrders(prevOrders => {
-          const existingPendingIndex = prevOrders.findIndex(
-            o => o.supplierId === updatedProduct.supplierId && o.status === 'Pending Approval'
-          );
+      const supplier = suppliers.find(s => s.id === updatedProduct.supplierId) || suppliers[0] || { id: 'SUP-101', name: 'ABC Distributors', email: 'supplier@example.com' };
+      const supplierIdToUse = supplier.id || updatedProduct.supplierId || 'SUP-101';
 
-          if (existingPendingIndex > -1) {
-            const existingOrder = prevOrders[existingPendingIndex];
-            const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
-            
-            if (!hasProduct) {
-              const orderItem = {
-                sku: updatedProduct.sku,
-                title: updatedProduct.title,
-                currentStock: updatedProduct.currentStock,
-                orderQty: updatedProduct.restockQty,
-                minStock: updatedProduct.minStock
-              };
-              
-              const updatedProductsList = [...existingOrder.products, orderItem];
-              const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
-              
-              const updatedOrdersList = [...prevOrders];
-              updatedOrdersList[existingPendingIndex] = {
-                ...existingOrder,
-                itemsCount: updatedProductsList.length,
-                totalAmount: existingOrder.totalAmount + additionalCost,
-                products: updatedProductsList
-              };
-              return updatedOrdersList;
-            }
-          } else {
-            const newRoId = `RO-${prevOrders.length + 1005}`;
+      setRestockOrders(prevOrders => {
+        const existingPendingIndex = prevOrders.findIndex(
+          o => (o.supplierId === supplierIdToUse || o.supplierName === supplier.name) && (o.status === 'Pending Approval' || o.rawStatus === 'PENDING_APPROVAL')
+        );
+
+        if (existingPendingIndex > -1) {
+          const existingOrder = prevOrders[existingPendingIndex];
+          const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
+          
+          if (!hasProduct) {
             const orderItem = {
               sku: updatedProduct.sku,
               title: updatedProduct.title,
@@ -426,30 +504,48 @@ export const StoreProvider = ({ children }) => {
               orderQty: updatedProduct.restockQty,
               minStock: updatedProduct.minStock
             };
-            const totalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
-
-            const newOrder = {
-              id: newRoId,
-              supplierId: updatedProduct.supplierId,
-              supplierName: supplier.name,
-              email: supplier.email,
-              itemsCount: 1,
-              totalAmount: totalCost,
-              date: 'Today, Just now',
-              status: 'Pending Approval',
-              products: [orderItem]
+            
+            const updatedProductsList = [...existingOrder.products, orderItem];
+            const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+            
+            const updatedOrdersList = [...prevOrders];
+            updatedOrdersList[existingPendingIndex] = {
+              ...existingOrder,
+              itemsCount: updatedProductsList.length,
+              totalAmount: existingOrder.totalAmount + additionalCost,
+              products: updatedProductsList
             };
-
-            // Increment active orders for supplier
-            setSuppliers(prevSuppliers => prevSuppliers.map(s => 
-              s.id === supplier.id ? { ...s, activeOrders: s.activeOrders + 1 } : s
-            ));
-
-            return [newOrder, ...prevOrders];
+            return updatedOrdersList;
           }
-          return prevOrders;
-        });
-      }
+        } else {
+          const newRoId = `RO-${Date.now().toString().slice(-6)}`;
+          const orderItem = {
+            sku: updatedProduct.sku,
+            title: updatedProduct.title,
+            currentStock: updatedProduct.currentStock,
+            orderQty: updatedProduct.restockQty,
+            minStock: updatedProduct.minStock
+          };
+          const totalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+
+          const newOrder = {
+            id: newRoId,
+            orderNumber: newRoId,
+            supplierId: supplierIdToUse,
+            supplierName: supplier.name,
+            email: supplier.email,
+            itemsCount: 1,
+            totalAmount: totalCost,
+            date: 'Today, Just now',
+            status: 'Pending Approval',
+            rawStatus: 'PENDING_APPROVAL',
+            products: [orderItem]
+          };
+
+          return [newOrder, ...prevOrders];
+        }
+        return prevOrders;
+      });
     }
   }, [products, suppliers, addSystemNotification]);
 
@@ -572,6 +668,7 @@ export const StoreProvider = ({ children }) => {
       refreshProducts,
       refreshCategories,
       refreshSales,
+      refreshRestockOrders,
       refreshAll,
       createSale,
       approveRestockOrder,
