@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { 
-  INITIAL_PRODUCTS, 
-  INITIAL_SUPPLIERS, 
-  INITIAL_CATEGORIES, 
-  INITIAL_SALES, 
-  INITIAL_RESTOCK_ORDERS, 
-  INITIAL_NOTIFICATIONS 
+import {
+  INITIAL_PRODUCTS,
+  INITIAL_SUPPLIERS,
+  INITIAL_CATEGORIES,
+  INITIAL_SALES,
+  INITIAL_RESTOCK_ORDERS,
+  INITIAL_NOTIFICATIONS
 } from '../constants/mockData';
 import { suppliersService } from '../services/suppliers.service';
 import { productsService } from '../services/products.service';
@@ -68,7 +68,7 @@ export const StoreProvider = ({ children }) => {
 
         products.forEach(p => {
           if (p.currentStock <= 0) {
-            const inOrder = nextOrders.some(o => 
+            const inOrder = nextOrders.some(o =>
               (o.status === 'Pending Approval' || o.status === 'Email Sent' || o.rawStatus === 'PENDING_APPROVAL' || o.rawStatus === 'SENT') &&
               (o.products || []).some(item => item.sku === p.sku || item.productId === p.id)
             );
@@ -77,7 +77,7 @@ export const StoreProvider = ({ children }) => {
               hasChanges = true;
               const supp = suppliers.find(s => s.id === p.supplierId) || suppliers[0] || { id: 'SUP-101', name: 'ABC Distributors', email: 'supplier@example.com' };
               const suppId = supp.id || p.supplierId || 'SUP-101';
-              
+
               const pendingIdx = nextOrders.findIndex(o => (o.supplierId === suppId || o.supplierName === supp.name) && (o.status === 'Pending Approval' || o.rawStatus === 'PENDING_APPROVAL'));
               const orderQty = p.restockQty || p.restockQuantity || 10;
               const price = p.purchasePrice || 0;
@@ -236,18 +236,19 @@ export const StoreProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Failed to approve restock order via API:', err);
+      throw err;
     }
 
     // Local fallback
     setRestockOrders(prev => prev.map(order => {
       if (order.id !== orderId && order.orderNumber !== orderId) return order;
-      
+
       addSystemNotification(
-        'restock_approved', 
-        `✓ Order Approved: Restock purchase email sent for ${orderId}.`, 
+        'restock_approved',
+        `✓ Order Approved: Restock purchase email sent for ${orderId}.`,
         orderId
       );
-      
+
       return {
         ...order,
         status: 'Email Sent',
@@ -269,7 +270,7 @@ export const StoreProvider = ({ children }) => {
         if (prod.sku && receivedQuantities[prod.sku] !== undefined) return Number(receivedQuantities[prod.sku]);
         if (prod.id && receivedQuantities[prod.id] !== undefined) return Number(receivedQuantities[prod.id]);
       }
-      const match = orderItems.find(item => 
+      const match = orderItems.find(item =>
         (item.sku && prod.sku && item.sku.toLowerCase() === prod.sku.toLowerCase()) ||
         (item.productId && (item.productId === prod.id || item.productId === prod.productId)) ||
         (item.id && (item.id === prod.id || item.id === prod.productId))
@@ -343,7 +344,7 @@ export const StoreProvider = ({ children }) => {
     // 4. Decrement active orders for supplier
     const supplierId = targetOrder?.supplierId;
     if (supplierId) {
-      setSuppliers(prev => prev.map(s => 
+      setSuppliers(prev => prev.map(s =>
         (s.id === supplierId || s.name === targetOrder.supplierName)
           ? { ...s, activeOrders: Math.max(0, (s.activeOrders || 0) - 1) }
           : s
@@ -446,7 +447,7 @@ export const StoreProvider = ({ children }) => {
 
       const updated = await productsService.updateProduct(prodId, apiPayload);
       setProducts(prev => prev.map(p => (p.id === prodId || p.sku === skuOrId) ? { ...p, ...updated } : p));
-      
+
       addSystemNotification(
         'system',
         `Product SKU: ${skuOrId} details updated in database.`,
@@ -551,8 +552,8 @@ export const StoreProvider = ({ children }) => {
       // If stock goes below safety threshold, trigger automated restock check
       if (updatedProduct.currentStock <= updatedProduct.minStock) {
         addSystemNotification(
-          'low_stock', 
-          `🔴 Alert: Adjusted stock of ${updatedProduct.title} is below safety levels (${updatedProduct.currentStock} units).`, 
+          'low_stock',
+          `🔴 Alert: Adjusted stock of ${updatedProduct.title} is below safety levels (${updatedProduct.currentStock} units).`,
           sku
         );
 
@@ -568,7 +569,7 @@ export const StoreProvider = ({ children }) => {
           if (existingPendingIndex > -1) {
             const existingOrder = prevOrders[existingPendingIndex];
             const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
-            
+
             if (!hasProduct) {
               const orderItem = {
                 sku: updatedProduct.sku,
@@ -577,10 +578,10 @@ export const StoreProvider = ({ children }) => {
                 orderQty: updatedProduct.restockQty,
                 minStock: updatedProduct.minStock
               };
-              
+
               const updatedProductsList = [...existingOrder.products, orderItem];
               const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
-              
+
               const updatedOrdersList = [...prevOrders];
               updatedOrdersList[existingPendingIndex] = {
                 ...existingOrder,
@@ -643,7 +644,7 @@ export const StoreProvider = ({ children }) => {
       if (existingPendingIndex > -1) {
         const existingOrder = prevOrders[existingPendingIndex];
         const hasProductIndex = existingOrder.products.findIndex(pr => pr.sku === product.sku);
-        
+
         const updatedOrdersList = [...prevOrders];
         if (hasProductIndex > -1) {
           // Product already in pending order, increase qty
@@ -654,7 +655,7 @@ export const StoreProvider = ({ children }) => {
             return pr;
           });
           const additionalCost = product.purchasePrice * qtyToOrder;
-          
+
           updatedOrdersList[existingPendingIndex] = {
             ...existingOrder,
             totalAmount: existingOrder.totalAmount + additionalCost,
@@ -671,7 +672,7 @@ export const StoreProvider = ({ children }) => {
           };
           const updatedProductsList = [...existingOrder.products, orderItem];
           const additionalCost = product.purchasePrice * qtyToOrder;
-          
+
           updatedOrdersList[existingPendingIndex] = {
             ...existingOrder,
             itemsCount: updatedProductsList.length,
@@ -712,7 +713,7 @@ export const StoreProvider = ({ children }) => {
         };
 
         // Increment active orders for supplier
-        setSuppliers(prevSuppliers => prevSuppliers.map(s => 
+        setSuppliers(prevSuppliers => prevSuppliers.map(s =>
           s.id === supplier.id ? { ...s, activeOrders: s.activeOrders + 1 } : s
         ));
 

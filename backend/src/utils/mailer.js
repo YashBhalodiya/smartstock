@@ -8,21 +8,21 @@ const smtpPassword = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
 const transporter = nodemailer.createTransport(
   isGmail
     ? {
-        service: 'gmail',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: smtpPassword
-        }
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: smtpPassword
       }
+    }
     : {
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: process.env.SMTP_USER ? {
-          user: process.env.SMTP_USER,
-          pass: smtpPassword
-        } : undefined
-      }
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? {
+        user: process.env.SMTP_USER,
+        pass: smtpPassword
+      } : undefined
+    }
 );
 
 /**
@@ -124,8 +124,9 @@ export async function sendRestockOrderEmail(toEmail, order, shopkeeper) {
   const shopEmail = shopkeeper?.email || 'store@smartstock.com';
   const orderNumber = order.orderNumber || order.id;
 
-  const itemsHtml = (order.items || []).map((item, idx) => {
-    const prodName = item.product?.name || item.title || 'Product';
+  const orderItems = order.items || order.products || [];
+  const itemsHtml = orderItems.map((item, idx) => {
+    const prodName = item.product?.name || item.title || item.name || 'Product';
     const sku = item.product?.sku || item.sku || 'N/A';
     const qty = item.quantity || item.orderQty || 1;
     const price = Number(item.unitPurchasePrice || item.purchasePrice || 0);
@@ -142,6 +143,7 @@ export async function sendRestockOrderEmail(toEmail, order, shopkeeper) {
   }).join('');
 
   const totalAmount = Number(order.totalAmount || 0).toFixed(2);
+  const confirmDeliveryUrl = `${process.env.API_BASE_URL || 'http://localhost:5000'}/api/restock/confirm-delivery/${order.id || orderNumber}`;
 
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #cbd5e1; border-radius: 10px; background-color: #ffffff;">
@@ -191,6 +193,12 @@ export async function sendRestockOrderEmail(toEmail, order, shopkeeper) {
       <div style="text-align: right; padding: 16px; background-color: #f1f5f9; border-radius: 8px; margin-bottom: 20px;">
         <span style="font-size: 14px; color: #475569;">Total Order Value: </span>
         <strong style="font-size: 22px; color: #16a34a; margin-left: 8px;">₹${totalAmount}</strong>
+      </div>
+
+      <div style="text-align: center; margin: 24px 0 20px 0;">
+        <a href="${confirmDeliveryUrl}" style="background-color: #16a34a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">
+          ✓ Confirm Stock Dispatched / Delivered
+        </a>
       </div>
 
       <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 12px; color: #94a3b8; text-align: center;">

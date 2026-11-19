@@ -95,8 +95,8 @@ export async function createSale(userId, data) {
         }
       });
 
-      // Automatically trigger restock order creation if product goes out of stock (0 units)
-      if (stockAfter === 0) {
+      // Automatically trigger restock order creation if product reaches or drops below safety threshold
+      if (stockAfter <= product.minimumStock) {
         await checkAndCreateAutoRestockOrder(tx, product.id, userId);
       }
     }

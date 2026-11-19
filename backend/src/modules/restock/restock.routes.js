@@ -4,6 +4,10 @@ import * as restockController from './restock.controller.js';
 
 const router = Router();
 
+// Public Supplier Delivery Confirmation Webhook (Clicked from supplier email)
+router.get('/confirm-delivery/:id', restockController.confirmDeliveryFromEmail);
+
+// Protected routes (Require Shopkeeper authentication)
 router.use(authenticateUser);
 
 router.get('/', restockController.getRestockOrders);
