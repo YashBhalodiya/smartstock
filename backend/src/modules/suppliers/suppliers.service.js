@@ -16,10 +16,7 @@ export async function createSupplier(userId, data) {
 export async function getSuppliers(userId) {
   const suppliers = await prisma.supplier.findMany({
     where: {
-      OR: [
-        { createdBy: userId },
-        { createdBy: null }
-      ],
+      createdBy: userId,
       isActive: true
     },
     include: {

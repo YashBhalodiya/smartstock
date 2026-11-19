@@ -8,5 +8,7 @@ router.use(authenticateUser);
 
 router.get('/', categoriesController.getCategories);
 router.post('/', categoriesController.createCategory);
+router.patch('/:id', categoriesController.updateCategory);
+router.delete('/:id', categoriesController.deleteCategory);
 
 export default router;

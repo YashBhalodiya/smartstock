@@ -16,6 +16,54 @@ export async function createProduct(userId, data) {
     throw new AppError(`Product with SKU "${data.sku}" already exists in your inventory`, 400, 'DUPLICATE_SKU');
   }
 
+  // Resolve Category ID
+  let categoryId = data.categoryId;
+  if (!categoryId) {
+    const catName = data.categoryName || data.category || 'General';
+    let cat = await prisma.category.findFirst({
+      where: {
+        name: { equals: catName, mode: 'insensitive' },
+        createdBy: userId,
+        isActive: true
+      }
+    });
+    if (!cat) {
+      cat = await prisma.category.create({
+        data: {
+          name: catName,
+          createdBy: userId,
+          isActive: true
+        }
+      });
+    }
+    categoryId = cat.id;
+  }
+
+  // Resolve Supplier ID
+  let supplierId = data.supplierId;
+  if (!supplierId) {
+    const suppName = data.supplierName || 'General Wholesale Supplier';
+    let supp = await prisma.supplier.findFirst({
+      where: {
+        name: { equals: suppName, mode: 'insensitive' },
+        createdBy: userId,
+        isActive: true
+      }
+    });
+    if (!supp) {
+      supp = await prisma.supplier.create({
+        data: {
+          name: suppName,
+          email: 'supplier@smartstock.com',
+          phone: '',
+          createdBy: userId,
+          isActive: true
+        }
+      });
+    }
+    supplierId = supp.id;
+  }
+
   // Create product explicitly linked to authenticated shopkeeper (createdBy: userId)
   const product = await prisma.$transaction(async (tx) => {
     const newProd = await tx.product.create({
@@ -23,8 +71,8 @@ export async function createProduct(userId, data) {
         name: data.name,
         sku: data.sku,
         barcode: data.barcode || null,
-        categoryId: data.categoryId,
-        supplierId: data.supplierId,
+        categoryId,
+        supplierId,
         purchasePrice: data.purchasePrice,
         sellingPrice: data.sellingPrice,
         currentStock: data.currentStock,
@@ -65,10 +113,7 @@ export async function createProduct(userId, data) {
 export async function getProducts(userId) {
   const products = await prisma.product.findMany({
     where: {
-      OR: [
-        { createdBy: userId },
-        { createdBy: null }
-      ],
+      createdBy: userId,
       isActive: true
     },
     include: {
@@ -87,10 +132,7 @@ export async function getProductById(userId, productId) {
   const product = await prisma.product.findFirst({
     where: {
       id: productId,
-      OR: [
-        { createdBy: userId },
-        { createdBy: null }
-      ]
+      createdBy: userId
     },
     include: {
       category: true,
@@ -109,10 +151,7 @@ export async function updateProduct(userId, productId, data) {
   const existing = await prisma.product.findFirst({
     where: {
       id: productId,
-      OR: [
-        { createdBy: userId },
-        { createdBy: null }
-      ]
+      createdBy: userId
     }
   });
 
@@ -140,10 +179,7 @@ export async function deleteProduct(userId, productId) {
   const existing = await prisma.product.findFirst({
     where: {
       id: productId,
-      OR: [
-        { createdBy: userId },
-        { createdBy: null }
-      ]
+      createdBy: userId
     }
   });
 

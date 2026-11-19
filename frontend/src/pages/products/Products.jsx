@@ -137,8 +137,8 @@ const Products = () => {
     if (!formValues.title.trim()) errors.title = 'Product name is required';
     if (!formValues.sku.trim()) errors.sku = 'SKU is required';
     if (!formValues.barcode.trim()) errors.barcode = 'Barcode scanner number is required';
-    if (!formValues.category) errors.category = 'Please select a category department';
-    if (!formValues.supplierId) errors.supplierId = 'Please select a supplier contact';
+    if (!formValues.category?.trim()) errors.category = 'Please provide a category department';
+    if (!formValues.supplierId?.trim()) errors.supplierId = 'Please provide a supplier contact';
 
     // Numeric checks
     const sPrice = Number(formValues.sellingPrice);
@@ -215,12 +215,15 @@ const Products = () => {
       return;
     }
 
+    const isExistingSupplier = activeSuppliers.some(s => s.id === formValues.supplierId);
     const payload = {
       title: formValues.title,
       sku: formValues.sku,
       barcode: formValues.barcode,
       category: formValues.category,
-      supplierId: formValues.supplierId,
+      categoryName: formValues.category,
+      supplierId: isExistingSupplier ? formValues.supplierId : undefined,
+      supplierName: !isExistingSupplier ? formValues.supplierId : undefined,
       purchasePrice: Number(formValues.purchasePrice),
       sellingPrice: Number(formValues.sellingPrice),
       currentStock: Number(formValues.currentStock),
@@ -267,9 +270,11 @@ const Products = () => {
     setIsDetailOpen(true);
   };
 
-  const getSupplierName = (id) => {
+  const getSupplierName = (id, product) => {
+    if (product?.supplierName) return product.supplierName;
+    if (product?.supplier?.name) return product.supplier.name;
     const s = suppliers.find(s => s.id === id);
-    return s ? s.name : 'Unknown Supplier';
+    return s ? s.name : 'General Wholesale';
   };
 
   return (
@@ -403,7 +408,7 @@ const Products = () => {
                         </Td>
                         <Td><span className="font-semibold text-neutral-800">₹{product.sellingPrice}</span></Td>
                         <Td className="text-muted">₹{product.purchasePrice}</Td>
-                        <Td>{getSupplierName(product.supplierId)}</Td>
+                        <Td>{getSupplierName(product.supplierId, product)}</Td>
                         <Td>
                           <Badge variant={isInactive ? 'neutral' : 'success'}>
                             {product.status}
@@ -509,27 +514,51 @@ const Products = () => {
             required
           />
 
-          <Select
-            id="category"
-            label="Category Department"
-            value={formValues.category}
-            onChange={handleInputChange}
-            placeholder="Select category..."
-            options={activeCategories.map(c => ({ value: c.name, label: c.name }))}
-            error={formErrors.category}
-            required
-          />
+          {activeCategories.length > 0 ? (
+            <Select
+              id="category"
+              label="Category Department"
+              value={formValues.category}
+              onChange={handleInputChange}
+              placeholder="Select category..."
+              options={activeCategories.map(c => ({ value: c.name, label: c.name }))}
+              error={formErrors.category}
+              required
+            />
+          ) : (
+            <Input
+              id="category"
+              label="Category Department"
+              value={formValues.category}
+              onChange={handleInputChange}
+              placeholder="e.g. Food, Groceries, Snacks..."
+              error={formErrors.category}
+              required
+            />
+          )}
 
-          <Select
-            id="supplierId"
-            label="Supplier Partner"
-            value={formValues.supplierId}
-            onChange={handleInputChange}
-            placeholder="Select supplier wholesale..."
-            options={activeSuppliers.map(s => ({ value: s.id, label: s.name }))}
-            error={formErrors.supplierId}
-            required
-          />
+          {activeSuppliers.length > 0 ? (
+            <Select
+              id="supplierId"
+              label="Supplier Partner"
+              value={formValues.supplierId}
+              onChange={handleInputChange}
+              placeholder="Select supplier wholesale..."
+              options={activeSuppliers.map(s => ({ value: s.id, label: s.name }))}
+              error={formErrors.supplierId}
+              required
+            />
+          ) : (
+            <Input
+              id="supplierId"
+              label="Supplier Name"
+              value={formValues.supplierId}
+              onChange={handleInputChange}
+              placeholder="e.g. Metro Wholesale, Local Vendor..."
+              error={formErrors.supplierId}
+              required
+            />
+          )}
 
           <Input
             id="purchasePrice"

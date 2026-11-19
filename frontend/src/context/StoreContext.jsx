@@ -24,27 +24,13 @@ export const useStore = () => {
   return context;
 };
 
-const getInitialData = (demoData) => {
-  try {
-    const userStr = localStorage.getItem('stockflow_user');
-    if (userStr) {
-      const user = JSON.parse(userStr);
-      // Seeded demo account gets seeded demo data; new accounts get clean empty state
-      if (user && user.email === 'store@stockflow.com') {
-        return demoData;
-      }
-    }
-  } catch (err) {}
-  return [];
-};
-
 export const StoreProvider = ({ children }) => {
-  const [products, setProducts] = useState(() => getInitialData(INITIAL_PRODUCTS));
-  const [suppliers, setSuppliers] = useState(() => getInitialData(INITIAL_SUPPLIERS));
-  const [categories, setCategories] = useState(() => getInitialData(INITIAL_CATEGORIES));
-  const [sales, setSales] = useState(() => getInitialData(INITIAL_SALES));
-  const [restockOrders, setRestockOrders] = useState(() => getInitialData(INITIAL_RESTOCK_ORDERS));
-  const [notifications, setNotifications] = useState(() => getInitialData(INITIAL_NOTIFICATIONS));
+  const [products, setProducts] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [sales, setSales] = useState([]);
+  const [restockOrders, setRestockOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   const fetchEntity = async (serviceFn, setter, label) => {
     if (localStorage.getItem('stockflow_token')) {
@@ -392,15 +378,19 @@ export const StoreProvider = ({ children }) => {
   // --- PHASE 4: PRODUCTS CRUD ACTIONS ---
   const addProduct = useCallback(async (productData) => {
     try {
-      // Find category ID or create new category on backend
       let categoryId = productData.categoryId;
-      if (!categoryId) {
+      if (!categoryId && productData.category) {
         const matchedCat = categories.find(c => c.name.toLowerCase() === productData.category.toLowerCase());
         if (matchedCat) {
           categoryId = matchedCat.id;
         } else {
-          const newCat = await categoriesService.createCategory({ name: productData.category });
-          categoryId = newCat.id;
+          try {
+            const newCat = await categoriesService.createCategory({ name: productData.category });
+            categoryId = newCat.id;
+            setCategories(prev => [newCat, ...prev.filter(c => c.id !== newCat.id)]);
+          } catch (e) {
+            console.warn('Auto category creation fallback:', e);
+          }
         }
       }
 
@@ -408,8 +398,9 @@ export const StoreProvider = ({ children }) => {
         name: productData.title,
         sku: productData.sku,
         barcode: productData.barcode || undefined,
-        categoryId,
-        supplierId: productData.supplierId,
+        categoryId: categoryId || undefined,
+        categoryName: productData.category || undefined,
+        supplierId: productData.supplierId || undefined,
         purchasePrice: Number(productData.purchasePrice),
         sellingPrice: Number(productData.sellingPrice),
         currentStock: Number(productData.currentStock),
@@ -426,141 +417,181 @@ export const StoreProvider = ({ children }) => {
         createdProduct.sku
       );
 
+      refreshCategories();
+      refreshSuppliers();
+
       return createdProduct;
     } catch (err) {
       console.error('Error saving product to backend DB:', err);
-      // Fallback local update
-      const newSku = productData.sku || `SKU-${products.length + 1012}`;
-      const newProduct = {
-        ...productData,
-        sku: newSku,
-        status: 'Active'
+      throw err;
+    }
+  }, [categories, addSystemNotification, refreshCategories, refreshSuppliers]);
+
+  const updateProduct = useCallback(async (skuOrId, updatedData) => {
+    try {
+      const prod = products.find(p => p.sku === skuOrId || p.id === skuOrId);
+      const prodId = prod?.id || skuOrId;
+
+      const apiPayload = {
+        ...(updatedData.title ? { name: updatedData.title } : {}),
+        ...(updatedData.sellingPrice !== undefined ? { sellingPrice: Number(updatedData.sellingPrice) } : {}),
+        ...(updatedData.purchasePrice !== undefined ? { purchasePrice: Number(updatedData.purchasePrice) } : {}),
+        ...(updatedData.currentStock !== undefined ? { currentStock: Number(updatedData.currentStock) } : {}),
+        ...(updatedData.minStock !== undefined ? { minimumStock: Number(updatedData.minStock) } : {}),
+        ...(updatedData.restockQty !== undefined ? { restockQuantity: Number(updatedData.restockQty) } : {}),
+        ...(updatedData.barcode !== undefined ? { barcode: updatedData.barcode } : {}),
+        ...(updatedData.supplierId ? { supplierId: updatedData.supplierId } : {}),
+        ...(updatedData.category ? { categoryName: updatedData.category } : {})
       };
 
-      setProducts(prev => [newProduct, ...prev]);
-      return newProduct;
-    }
-  }, [categories, products, addSystemNotification]);
-
-  const updateProduct = useCallback((sku, updatedData) => {
-    setProducts(prev => prev.map(p => p.sku === sku ? { ...p, ...updatedData } : p));
-    
-    // Category count shifts if category is modified (complex, but simple approximation works for mockup)
-    addSystemNotification(
-      'system',
-      `Product SKU: ${sku} details successfully updated.`,
-      sku
-    );
-  }, [addSystemNotification]);
-
-  const toggleProductStatus = useCallback((sku) => {
-    setProducts(prev => prev.map(p => {
-      if (p.sku !== sku) return p;
-      const nextStatus = p.status === 'Active' ? 'Inactive' : 'Active';
+      const updated = await productsService.updateProduct(prodId, apiPayload);
+      setProducts(prev => prev.map(p => (p.id === prodId || p.sku === skuOrId) ? { ...p, ...updated } : p));
       
       addSystemNotification(
         'system',
-        `Product ${p.title} has been marked ${nextStatus}.`,
-        sku
+        `Product SKU: ${skuOrId} details updated in database.`,
+        skuOrId
       );
-      
-      return {
-        ...p,
-        status: nextStatus
-      };
-    }));
-  }, [addSystemNotification]);
+
+      return updated;
+    } catch (err) {
+      console.error('Error updating product in database:', err);
+      throw err;
+    }
+  }, [products, addSystemNotification]);
+
+  const toggleProductStatus = useCallback(async (skuOrId) => {
+    try {
+      const prod = products.find(p => p.sku === skuOrId || p.id === skuOrId);
+      if (!prod) return;
+      const nextStatus = prod.status === 'Active' ? 'Inactive' : 'Active';
+      const isActive = nextStatus === 'Active';
+
+      await productsService.updateProduct(prod.id, { isActive });
+      setProducts(prev => prev.map(p => (p.id === prod.id || p.sku === skuOrId) ? { ...p, status: nextStatus, isActive } : p));
+
+      addSystemNotification(
+        'system',
+        `Product ${prod.title} has been marked ${nextStatus}.`,
+        skuOrId
+      );
+    } catch (err) {
+      console.error('Failed to toggle product status in database:', err);
+      throw err;
+    }
+  }, [products, addSystemNotification]);
 
   // --- PHASE 4: CATEGORIES CRUD ACTIONS ---
-  const addCategory = useCallback(async (name) => {
+  const addCategory = useCallback(async (name, description = '') => {
     try {
-      if (localStorage.getItem('stockflow_token')) {
-        const newCat = await categoriesService.createCategory({ name });
-        setCategories(prev => [newCat, ...prev]);
-        addSystemNotification('system', `Category department: ${name} saved to database.`, newCat.id);
-        return newCat;
-      }
+      const newCat = await categoriesService.createCategory({ name, description });
+      setCategories(prev => [newCat, ...prev.filter(c => c.id !== newCat.id)]);
+      addSystemNotification('system', `Category department: ${name} saved to database.`, newCat.id);
+      return newCat;
     } catch (err) {
       console.error('Error saving category to database:', err);
+      throw err;
     }
-
-    const nextId = `CAT-${categories.length + 1}`;
-    const newCat = {
-      id: nextId,
-      name,
-      count: 0,
-      createdDate: 'Today, Just now',
-      status: 'Active'
-    };
-
-    setCategories(prev => [...prev, newCat]);
-    addSystemNotification('system', `Category tag: ${name} added successfully.`, nextId);
-    return newCat;
-  }, [categories.length, addSystemNotification]);
-
-  const updateCategory = useCallback((id, updatedData) => {
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updatedData } : c));
-    addSystemNotification('system', `Category tag details updated.`, id);
   }, [addSystemNotification]);
 
-  const toggleCategoryStatus = useCallback((id) => {
-    setCategories(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      const nextStatus = c.status === 'Active' ? 'Inactive' : 'Active';
-      
+  const updateCategory = useCallback(async (id, updatedData) => {
+    try {
+      const updated = await categoriesService.updateCategory(id, updatedData);
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+      addSystemNotification('system', `Category department details updated in database.`, id);
+      return updated;
+    } catch (err) {
+      console.error('Failed to update category in database:', err);
+      throw err;
+    }
+  }, [addSystemNotification]);
+
+  const toggleCategoryStatus = useCallback(async (id) => {
+    try {
+      const target = categories.find(c => c.id === id);
+      if (!target) return;
+      const nextStatus = (target.status === 'Active' || target.isActive !== false) ? 'Inactive' : 'Active';
+      const isActive = nextStatus === 'Active';
+
+      await categoriesService.updateCategory(id, { isActive });
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, status: nextStatus, isActive } : c));
+
       addSystemNotification(
         'system',
-        `Category department ${c.name} is now ${nextStatus}.`,
+        `Category department ${target.name} is now ${nextStatus}.`,
         id
       );
-
-      return {
-        ...c,
-        status: nextStatus
-      };
-    }));
-  }, [addSystemNotification]);
+    } catch (err) {
+      console.error('Failed to toggle category status in database:', err);
+      throw err;
+    }
+  }, [categories, addSystemNotification]);
 
   // --- PHASE 5: INVENTORY ACTIONS ---
-  const adjustStock = useCallback((sku, newStockCount, reason) => {
+  const adjustStock = useCallback(async (sku, newStockCount, reason) => {
     const product = products.find(p => p.sku === sku);
     if (!product) return;
+    const newStock = Number(newStockCount);
 
-    const updatedProduct = { ...product, currentStock: Number(newStockCount) };
+    try {
+      await productsService.updateProduct(product.id, { currentStock: newStock });
+      const updatedProduct = { ...product, currentStock: newStock };
 
-    setProducts(prevProducts => prevProducts.map(p => {
-      if (p.sku !== sku) return p;
-      return updatedProduct;
-    }));
+      setProducts(prevProducts => prevProducts.map(p => {
+        if (p.sku !== sku) return p;
+        return updatedProduct;
+      }));
 
-    addSystemNotification(
-      'system',
-      `Stock Adjustment: ${product.title} set to ${newStockCount} units. Reason: ${reason}.`,
-      sku
-    );
-
-    // If stock goes below safety threshold, trigger automated restock check
-    if (updatedProduct.currentStock <= updatedProduct.minStock) {
       addSystemNotification(
-        'low_stock', 
-        `🔴 Alert: Adjusted stock of ${updatedProduct.title} is below safety levels (${updatedProduct.currentStock} units).`, 
+        'system',
+        `Stock Adjustment: ${product.title} set to ${newStockCount} units. Reason: ${reason}.`,
         sku
       );
 
-      // Auto append to restock orders
-      const supplier = suppliers.find(s => s.id === updatedProduct.supplierId) || suppliers[0] || { id: 'SUP-101', name: 'ABC Distributors', email: 'supplier@example.com' };
-      const supplierIdToUse = supplier.id || updatedProduct.supplierId || 'SUP-101';
-
-      setRestockOrders(prevOrders => {
-        const existingPendingIndex = prevOrders.findIndex(
-          o => (o.supplierId === supplierIdToUse || o.supplierName === supplier.name) && (o.status === 'Pending Approval' || o.rawStatus === 'PENDING_APPROVAL')
+      // If stock goes below safety threshold, trigger automated restock check
+      if (updatedProduct.currentStock <= updatedProduct.minStock) {
+        addSystemNotification(
+          'low_stock', 
+          `🔴 Alert: Adjusted stock of ${updatedProduct.title} is below safety levels (${updatedProduct.currentStock} units).`, 
+          sku
         );
 
-        if (existingPendingIndex > -1) {
-          const existingOrder = prevOrders[existingPendingIndex];
-          const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
-          
-          if (!hasProduct) {
+        // Auto append to restock orders
+        const supplier = suppliers.find(s => s.id === updatedProduct.supplierId) || suppliers[0] || { id: 'SUP-101', name: 'ABC Distributors', email: 'supplier@example.com' };
+        const supplierIdToUse = supplier.id || updatedProduct.supplierId || 'SUP-101';
+
+        setRestockOrders(prevOrders => {
+          const existingPendingIndex = prevOrders.findIndex(
+            o => (o.supplierId === supplierIdToUse || o.supplierName === supplier.name) && (o.status === 'Pending Approval' || o.rawStatus === 'PENDING_APPROVAL')
+          );
+
+          if (existingPendingIndex > -1) {
+            const existingOrder = prevOrders[existingPendingIndex];
+            const hasProduct = existingOrder.products.some(pr => pr.sku === updatedProduct.sku);
+            
+            if (!hasProduct) {
+              const orderItem = {
+                sku: updatedProduct.sku,
+                title: updatedProduct.title,
+                currentStock: updatedProduct.currentStock,
+                orderQty: updatedProduct.restockQty,
+                minStock: updatedProduct.minStock
+              };
+              
+              const updatedProductsList = [...existingOrder.products, orderItem];
+              const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+              
+              const updatedOrdersList = [...prevOrders];
+              updatedOrdersList[existingPendingIndex] = {
+                ...existingOrder,
+                itemsCount: updatedProductsList.length,
+                totalAmount: existingOrder.totalAmount + additionalCost,
+                products: updatedProductsList
+              };
+              return updatedOrdersList;
+            }
+          } else {
+            const newRoId = `RO-${Date.now().toString().slice(-6)}`;
             const orderItem = {
               sku: updatedProduct.sku,
               title: updatedProduct.title,
@@ -568,48 +599,30 @@ export const StoreProvider = ({ children }) => {
               orderQty: updatedProduct.restockQty,
               minStock: updatedProduct.minStock
             };
-            
-            const updatedProductsList = [...existingOrder.products, orderItem];
-            const additionalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
-            
-            const updatedOrdersList = [...prevOrders];
-            updatedOrdersList[existingPendingIndex] = {
-              ...existingOrder,
-              itemsCount: updatedProductsList.length,
-              totalAmount: existingOrder.totalAmount + additionalCost,
-              products: updatedProductsList
+            const totalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
+
+            const newOrder = {
+              id: newRoId,
+              orderNumber: newRoId,
+              supplierId: supplierIdToUse,
+              supplierName: supplier.name,
+              email: supplier.email,
+              itemsCount: 1,
+              totalAmount: totalCost,
+              date: 'Today, Just now',
+              status: 'Pending Approval',
+              rawStatus: 'PENDING_APPROVAL',
+              products: [orderItem]
             };
-            return updatedOrdersList;
+
+            return [newOrder, ...prevOrders];
           }
-        } else {
-          const newRoId = `RO-${Date.now().toString().slice(-6)}`;
-          const orderItem = {
-            sku: updatedProduct.sku,
-            title: updatedProduct.title,
-            currentStock: updatedProduct.currentStock,
-            orderQty: updatedProduct.restockQty,
-            minStock: updatedProduct.minStock
-          };
-          const totalCost = updatedProduct.purchasePrice * updatedProduct.restockQty;
-
-          const newOrder = {
-            id: newRoId,
-            orderNumber: newRoId,
-            supplierId: supplierIdToUse,
-            supplierName: supplier.name,
-            email: supplier.email,
-            itemsCount: 1,
-            totalAmount: totalCost,
-            date: 'Today, Just now',
-            status: 'Pending Approval',
-            rawStatus: 'PENDING_APPROVAL',
-            products: [orderItem]
-          };
-
-          return [newOrder, ...prevOrders];
-        }
-        return prevOrders;
-      });
+          return prevOrders;
+        });
+      }
+    } catch (err) {
+      console.error('Error adjusting stock in database:', err);
+      throw err;
     }
   }, [products, suppliers, addSystemNotification]);
 

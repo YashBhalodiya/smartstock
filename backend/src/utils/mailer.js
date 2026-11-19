@@ -2,22 +2,35 @@ import nodemailer from 'nodemailer';
 import { AppError } from '../middleware/errorHandler.js';
 
 // Configure Nodemailer SMTP Transport
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: process.env.SMTP_USER ? {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD
-  } : undefined
-});
+const isGmail = (process.env.SMTP_HOST || '').includes('gmail') || (process.env.SMTP_USER || '').includes('gmail');
+const smtpPassword = (process.env.SMTP_PASSWORD || '').replace(/\s+/g, '');
+
+const transporter = nodemailer.createTransport(
+  isGmail
+    ? {
+        service: 'gmail',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: smtpPassword
+        }
+      }
+    : {
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: process.env.SMTP_USER ? {
+          user: process.env.SMTP_USER,
+          pass: smtpPassword
+        } : undefined
+      }
+);
 
 /**
  * Send 2-Step Login Verification HTML Email
  */
 export async function send2FAEmail(toEmail, code) {
   const fromAddress = process.env.SMTP_FROM || `"StockFlow Security" <${process.env.SMTP_USER || 'noreply@smartstock.com'}>`;
-  
+
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #ffffff;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -117,7 +130,7 @@ export async function sendRestockOrderEmail(toEmail, order, shopkeeper) {
     const qty = item.quantity || item.orderQty || 1;
     const price = Number(item.unitPurchasePrice || item.purchasePrice || 0);
     const subtotal = Number(item.subtotal || price * qty);
-    
+
     return `
       <tr style="border-bottom: 1px solid #e2e8f0; text-align: left;">
         <td style="padding: 10px; font-size: 14px; color: #1e293b;">${idx + 1}. <strong>${prodName}</strong><br/><span style="font-size: 12px; color: #64748b;">SKU: ${sku}</span></td>

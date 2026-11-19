@@ -25,3 +25,29 @@ export async function createCategory(req, res, next) {
     next(err);
   }
 }
+
+export async function updateCategory(req, res, next) {
+  try {
+    const category = await categoriesService.updateCategory(req.user.id, req.params.id, req.body);
+    return res.status(200).json({
+      success: true,
+      message: 'Category updated successfully',
+      data: category
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteCategory(req, res, next) {
+  try {
+    const result = await categoriesService.deleteCategory(req.user.id, req.params.id);
+    return res.status(200).json({
+      success: true,
+      message: 'Category deleted successfully',
+      data: result
+    });
+  } catch (err) {
+    next(err);
+  }
+}
