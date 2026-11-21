@@ -18,6 +18,7 @@ import {
   Download, 
   Printer, 
   TrendingUp, 
+  TrendingDown,
   DollarSign, 
   ShoppingBag, 
   Receipt, 
@@ -31,7 +32,16 @@ import {
   Percent,
   CheckCircle2,
   Clock,
-  Truck
+  Truck,
+  Flame,
+  Snowflake,
+  Sparkles,
+  AlertTriangle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Zap,
+  Info,
+  ShieldAlert
 } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '../../components/ui/Card';
@@ -42,6 +52,7 @@ import Tabs from '../../components/ui/Tabs';
 import SearchBar from '../../components/ui/SearchBar';
 import { useToast } from '../../context/ToastContext';
 import { useStore } from '../../context/StoreContext';
+import { restockService } from '../../services/restock.service';
 
 const PIE_COLORS = [
   '#4f46e5', // Indigo
@@ -56,11 +67,20 @@ const PIE_COLORS = [
 
 const Reports = () => {
   const { addToast } = useToast();
-  const { products = [], sales = [], restockOrders = [], suppliers = [], categories = [] } = useStore();
+  const { 
+    products = [], 
+    sales = [], 
+    restockOrders = [], 
+    suppliers = [], 
+    categories = [],
+    refreshRestockOrders,
+    triggerManualRestock
+  } = useStore();
 
   const [dateRange, setDateRange] = useState('30d');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('insights'); // Start on Demand & Restock Insights
   const [ledgerSearch, setLedgerSearch] = useState('');
+  const [restockingId, setRestockingId] = useState(null);
 
   // 1. Filter Sales within selected date range
   const filteredSales = useMemo(() => {
@@ -77,6 +97,14 @@ const Reports = () => {
     });
   }, [sales, dateRange]);
 
+  // Number of effective days in period for velocity calculation
+  const periodDays = useMemo(() => {
+    if (dateRange === '7d') return 7;
+    if (dateRange === '30d') return 30;
+    if (dateRange === '90d') return 90;
+    return Math.max(14, Math.round((new Date() - new Date(sales[sales.length - 1]?.createdAt || Date.now() - 30 * 86400000)) / (86400000)));
+  }, [dateRange, sales]);
+
   // 2. High-Level Executive Financial Metrics
   const metrics = useMemo(() => {
     let totalGrossRevenue = 0;
@@ -85,7 +113,6 @@ const Reports = () => {
     let totalCOGS = 0; // Cost of goods sold
     let totalItemsSold = 0;
 
-    // Build quick product map for purchase price / category lookup
     const prodMap = new Map();
     products.forEach(p => {
       prodMap.set(p.id, p);
@@ -140,7 +167,179 @@ const Reports = () => {
     };
   }, [filteredSales, products]);
 
-  // 3. Daily Sales & Profit Timeline for Charts
+  // 3. AI DEMAND INTELLIGENCE & RESTOCK FORECASTING
+  const demandInsights = useMemo(() => {
+    // Map product sales
+    const salesStats = new Map();
+
+    products.forEach(p => {
+      salesStats.set(p.id, {
+        product: p,
+        id: p.id,
+        sku: p.sku,
+        title: p.title || p.name,
+        category: p.category || 'General',
+        currentStock: Number(p.currentStock || 0),
+        minStock: Number(p.minStock || p.minimumStock || 5),
+        restockQty: Number(p.restockQty || p.restockQuantity || 15),
+        purchasePrice: Number(p.purchasePrice || 0),
+        sellingPrice: Number(p.sellingPrice || 0),
+        supplierId: p.supplierId,
+        supplierName: p.supplierName || 'Primary Supplier',
+        unitsSold: 0,
+        revenue: 0
+      });
+    });
+
+    filteredSales.forEach(sale => {
+      (sale.items || []).forEach(item => {
+        let entry = salesStats.get(item.productId);
+        if (!entry && item.sku) {
+          entry = Array.from(salesStats.values()).find(s => s.sku === item.sku);
+        }
+
+        if (entry) {
+          const qty = Number(item.quantity || 1);
+          entry.unitsSold += qty;
+          entry.revenue += Number(item.subtotal || ((Number(item.unitPrice || 0)) * qty));
+        }
+      });
+    });
+
+    const analyzedList = Array.from(salesStats.values()).map(item => {
+      const dailyVelocity = item.unitsSold / periodDays;
+      const weeklyRunRate = Number((dailyVelocity * 7).toFixed(1));
+      const projected30DayDemand = Math.max(1, Math.round(dailyVelocity * 30));
+
+      // Runway: Days of inventory left before stockout
+      const daysOfSupply = dailyVelocity > 0 ? Math.round(item.currentStock / dailyVelocity) : 999;
+      const isOutOfStock = item.currentStock === 0;
+      const isCriticalStockout = !isOutOfStock && daysOfSupply <= 7;
+      const capitalLocked = item.currentStock * item.purchasePrice;
+
+      // Recommended restock quantity: 2-week buffer based on velocity
+      const recommendedReorderQty = Math.max(item.restockQty, Math.round(dailyVelocity * 14) || item.restockQty);
+
+      return {
+        ...item,
+        dailyVelocity,
+        weeklyRunRate,
+        projected30DayDemand,
+        daysOfSupply,
+        isOutOfStock,
+        isCriticalStockout,
+        capitalLocked,
+        recommendedReorderQty
+      };
+    });
+
+    // A. HOT ITEMS (Highest potential for sales, fast turnover)
+    const hotItems = analyzedList
+      .filter(item => item.unitsSold > 0)
+      .sort((a, b) => b.dailyVelocity - a.dailyVelocity || b.unitsSold - a.unitsSold)
+      .map((item, idx) => {
+        let urgency = 'NORMAL';
+        let statusBadge = 'High Potential';
+        let recommendation = `Strong sales momentum (${item.weeklyRunRate} units/week). Increase reorder to +${item.recommendedReorderQty} units to prevent stockouts.`;
+
+        if (item.isOutOfStock) {
+          urgency = 'CRITICAL';
+          statusBadge = 'Out of Stock';
+          recommendation = `CRITICAL: Top selling item is completely out of stock! Immediately reorder +${item.recommendedReorderQty} units to capture lost revenue.`;
+        } else if (item.isCriticalStockout) {
+          urgency = 'HIGH';
+          statusBadge = `Stockout in ~${item.daysOfSupply} Days`;
+          recommendation = `Stockout warning: Only ${item.daysOfSupply} days of stock remaining at current burn rate. Expedite reorder of +${item.recommendedReorderQty} units.`;
+        } else if (idx === 0) {
+          statusBadge = '🔥 Top Store Performer';
+          recommendation = `Number 1 revenue driver! Projected next month demand: ~${item.projected30DayDemand} units. Maintain a robust safety stock buffer.`;
+        }
+
+        return {
+          ...item,
+          rank: idx + 1,
+          urgency,
+          statusBadge,
+          recommendation
+        };
+      });
+
+    // B. SLOW-MOVING / LOW-DEMAND ITEMS (Least sales, excess capital tied up)
+    const slowMovers = analyzedList
+      .filter(item => item.unitsSold === 0 || (item.daysOfSupply > 30 && item.currentStock > 0))
+      .sort((a, b) => a.unitsSold - b.unitsSold || b.capitalLocked - a.capitalLocked)
+      .map(item => {
+        let riskLevel = 'MODERATE';
+        let badge = 'Slow Mover';
+        let advice = '';
+        const suggestedLowReorder = Math.max(3, Math.round(item.restockQty * 0.3));
+
+        if (item.unitsSold === 0 && item.currentStock > 0) {
+          riskLevel = 'DEAD_STOCK';
+          badge = 'Zero Sales';
+          advice = `Zero purchases in ${periodDays} days with ₹${item.capitalLocked.toLocaleString('en-IN')} locked on shelf. Not suitable for regular reordering. Recommendation: Stop auto-restock, discount by 10-15% or bundle with top sellers to recover cash.`;
+        } else if (item.daysOfSupply > 60) {
+          riskLevel = 'EXCESS';
+          badge = `${item.daysOfSupply}+ Days Supply`;
+          advice = `Sluggish turnover. Over ${item.daysOfSupply} days of stock on hand. Lower reorder batch size from ${item.restockQty} to ${suggestedLowReorder} units to stop capital tie-up.`;
+        } else {
+          advice = `Low demand velocity. Lower minimum reorder threshold from ${item.minStock} to 2-3 units and only order on customer demand.`;
+        }
+
+        return {
+          ...item,
+          riskLevel,
+          badge,
+          suggestedLowReorder,
+          advice
+        };
+      });
+
+    // Total idle capital tied in slow movers
+    const totalLockedCapital = slowMovers.reduce((sum, item) => sum + item.capitalLocked, 0);
+    const stockoutCount = hotItems.filter(i => i.isOutOfStock || i.isCriticalStockout).length;
+
+    return {
+      hotItems,
+      slowMovers,
+      totalLockedCapital,
+      stockoutCount
+    };
+  }, [products, filteredSales, periodDays]);
+
+  // Quick Restock Action for Hot Items
+  const handleQuickRestock = async (item, quantityToOrder) => {
+    try {
+      setRestockingId(item.id);
+
+      if (localStorage.getItem('stockflow_token')) {
+        await restockService.createRestockOrder({
+          productId: item.id,
+          supplierId: item.supplierId || suppliers[0]?.id,
+          quantity: quantityToOrder
+        });
+        if (refreshRestockOrders) await refreshRestockOrders();
+      } else {
+        triggerManualRestock(item.sku, quantityToOrder);
+      }
+
+      addToast({
+        type: 'success',
+        title: 'Restock Order Dispatched',
+        message: `Restock Order for ${item.title} (+${quantityToOrder} units) added to Pending Approval queue.`
+      });
+    } catch (err) {
+      addToast({
+        type: 'danger',
+        title: 'Restock Generation Failed',
+        message: err.message || 'Could not dispatch restock request'
+      });
+    } finally {
+      setRestockingId(null);
+    }
+  };
+
+  // 4. Daily Sales & Profit Timeline for Charts
   const timelineChartData = useMemo(() => {
     const numDays = dateRange === '7d' ? 7 : (dateRange === '90d' ? 90 : 30);
     const dataMap = new Map();
@@ -197,11 +396,10 @@ const Reports = () => {
     return Array.from(dataMap.values());
   }, [filteredSales, dateRange, products]);
 
-  // 4. Product Performance Leaderboard
+  // 5. Product Performance Leaderboard
   const productPerformance = useMemo(() => {
     const stats = new Map();
 
-    // Initialize all products so 0-sales items also appear in audit
     products.forEach(p => {
       stats.set(p.id, {
         id: p.id,
@@ -234,22 +432,6 @@ const Reports = () => {
           entry.unitsSold += qty;
           entry.totalRevenue += sub;
           entry.totalCost += entry.purchasePrice * qty;
-        } else {
-          // Fallback if product was deleted from catalog
-          stats.set(item.productId || item.sku, {
-            id: item.productId || item.sku,
-            sku: item.sku || 'N/A',
-            title: item.title || 'Unknown Product',
-            category: 'Uncategorized',
-            currentStock: 0,
-            sellingPrice: Number(item.unitPrice || 0),
-            purchasePrice: 0,
-            unitsSold: qty,
-            totalRevenue: sub,
-            totalCost: 0,
-            totalProfit: sub,
-            marginPct: 100
-          });
         }
       });
     });
@@ -265,7 +447,7 @@ const Reports = () => {
     }).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }, [products, filteredSales]);
 
-  // 5. Category Breakdown Data
+  // 6. Category Breakdown Data
   const categoryChartData = useMemo(() => {
     const catMap = new Map();
     let totalRev = 0;
@@ -290,7 +472,7 @@ const Reports = () => {
     return list.sort((a, b) => b.revenue - a.revenue);
   }, [productPerformance]);
 
-  // 6. Payment Method Breakdown Data
+  // 7. Payment Method Breakdown Data
   const paymentBreakdown = useMemo(() => {
     const pMap = { CASH: 0, UPI: 0, CARD: 0, OTHER: 0 };
     let total = 0;
@@ -313,7 +495,7 @@ const Reports = () => {
     ].filter(item => item.amount > 0 || total === 0);
   }, [filteredSales]);
 
-  // 7. Restock & Procurement Velocity Analytics
+  // 8. Restock Analytics
   const restockAnalytics = useMemo(() => {
     let totalOrders = restockOrders.length;
     let pendingApproval = 0;
@@ -330,16 +512,10 @@ const Reports = () => {
       else if (status.includes('RECEIVED')) received++;
     });
 
-    return {
-      totalOrders,
-      pendingApproval,
-      emailSent,
-      received,
-      totalSpend
-    };
+    return { totalOrders, pendingApproval, emailSent, received, totalSpend };
   }, [restockOrders]);
 
-  // 8. Filtered Financial Audit Ledger
+  // 9. Filtered Financial Audit Ledger
   const filteredLedger = useMemo(() => {
     if (!ledgerSearch.trim()) return filteredSales;
     const q = ledgerSearch.toLowerCase();
@@ -414,12 +590,12 @@ const Reports = () => {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--neutral-900)' }}>Reports &amp; Analytics</h1>
-            <Badge variant="primary" style={{ padding: '3px 8px', fontSize: '11px', textTransform: 'uppercase' }}>
-              Live Business Intelligence
+            <Badge variant="primary" style={{ padding: '3px 8px', fontSize: '11px', textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <Sparkles size={12} /> Demand Intelligence
             </Badge>
           </div>
           <p className="text-muted text-sm" style={{ marginTop: '4px' }}>
-            Analyze store revenue, gross margins, product velocity, and inventory valuation in real time.
+            Forecast hot selling items, optimize reorder quantities, and eliminate capital drag from slow-moving stock.
           </p>
         </div>
 
@@ -499,38 +675,42 @@ const Reports = () => {
           </CardBody>
         </Card>
 
-        {/* GST Tax Ledger */}
+        {/* Demand Intelligence Summary */}
         <Card className="dashboard-kpi-card">
           <CardBody>
             <div className="flex-between">
-              <span className="text-xs font-bold text-muted" style={{ letterSpacing: '0.05em' }}>GST TAX COLLECTED</span>
-              <div className="kpi-icon-wrapper bg-warning-light text-warning flex-center" style={{ width: '36px', height: '36px', borderRadius: '8px' }}>
-                <Percent size={18} />
+              <span className="text-xs font-bold text-muted" style={{ letterSpacing: '0.05em' }}>DEMAND VELOCITY</span>
+              <div className="kpi-icon-wrapper flex-center" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#fee2e2', color: '#dc2626' }}>
+                <Flame size={18} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>
-              ₹{metrics.totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <h2 className="text-2xl font-bold text-neutral-900" style={{ margin: '8px 0 4px' }}>
+              {demandInsights.hotItems.length} Hot Items
             </h2>
             <div className="text-xs text-muted">
-              18% GST portion for tax compliance
+              {demandInsights.stockoutCount > 0 ? (
+                <span className="text-danger font-semibold">⚠️ {demandInsights.stockoutCount} item(s) at stockout risk</span>
+              ) : (
+                <span className="text-success font-semibold">✓ Inventory runways healthy</span>
+              )}
             </div>
           </CardBody>
         </Card>
 
-        {/* Active Inventory Valuation */}
+        {/* Slow Moving Capital Tied Up */}
         <Card className="dashboard-kpi-card">
           <CardBody>
             <div className="flex-between">
-              <span className="text-xs font-bold text-muted" style={{ letterSpacing: '0.05em' }}>INVENTORY VALUATION</span>
-              <div className="kpi-icon-wrapper flex-center" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#f1f5f9', color: '#475569' }}>
-                <Package size={18} />
+              <span className="text-xs font-bold text-muted" style={{ letterSpacing: '0.05em' }}>IDLE / SLOW STOCK CAPITAL</span>
+              <div className="kpi-icon-wrapper flex-center" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#e0f2fe', color: '#0284c7' }}>
+                <Snowflake size={18} />
               </div>
             </div>
-            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: 'var(--neutral-900)' }}>
-              ₹{metrics.inventoryCostValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <h2 className="text-2xl font-bold" style={{ margin: '8px 0 4px', color: '#0369a1' }}>
+              ₹{demandInsights.totalLockedCapital.toLocaleString('en-IN')}
             </h2>
             <div className="text-xs text-muted">
-              Asset cost • Retail: <strong>₹{metrics.inventoryRetailValue.toLocaleString('en-IN')}</strong>
+              {demandInsights.slowMovers.length} low-demand item(s) • Reduce reorders
             </div>
           </CardBody>
         </Card>
@@ -541,6 +721,7 @@ const Reports = () => {
       <div style={{ marginTop: '24px' }}>
         <Tabs 
           tabs={[
+            { id: 'insights', label: '🔥 Demand Insights & Restock Intelligence' },
             { id: 'overview', label: 'Sales & Revenue Velocity' },
             { id: 'products', label: 'Product Performance & Margins' },
             { id: 'categories', label: 'Category Distribution' },
@@ -552,7 +733,337 @@ const Reports = () => {
           style={{ marginBottom: '20px' }}
         />
 
-        {/* TAB 1: OVERVIEW & REVENUE VELOCITY */}
+        {/* TAB 1: DEMAND INSIGHTS & RESTOCK INTELLIGENCE */}
+        {activeTab === 'insights' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Top Insight Guidance Banner */}
+            <div style={{ 
+              padding: '16px 20px', 
+              backgroundColor: '#eff6ff', 
+              border: '1px solid #bfdbfe', 
+              borderRadius: '10px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '14px' 
+            }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#dbeafe', color: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Sparkles size={22} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#1e3a8a' }}>
+                  Smart Inventory Reorder Intelligence
+                </h4>
+                <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#2563eb', lineHeight: 1.5 }}>
+                  Based on your store's sales momentum, StockFlow calculates which products require an <strong>increased restock buffer</strong> to avoid missed sales, and identifies <strong>low-selling products</strong> where you should reduce purchase orders to free up working capital.
+                </p>
+              </div>
+            </div>
+
+            {/* TWO COLUMN INTELLIGENCE MATRIX */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              
+              {/* SECTION A: 🔥 HIGH DEMAND HOT ITEMS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="flex-between">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '6px', backgroundColor: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Flame size={18} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--neutral-900)' }}>
+                        Hot Items • High Potential
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Items selling fast. Increase restock order size to maximize sales.
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="danger">{demandInsights.hotItems.length} Products</Badge>
+                </div>
+
+                {demandInsights.hotItems.length > 0 ? (
+                  demandInsights.hotItems.map(item => (
+                    <Card key={item.id} style={{ borderLeft: item.isCriticalStockout || item.isOutOfStock ? '4px solid #ef4444' : '4px solid #f59e0b' }}>
+                      <CardBody style={{ padding: '16px 18px' }}>
+                        <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '8px' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              Rank #{item.rank} • {item.category}
+                            </span>
+                            <h4 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '700', color: 'var(--neutral-900)' }}>
+                              {item.title}
+                            </h4>
+                            <span style={{ fontSize: '12px', color: 'var(--neutral-500)', fontFamily: 'monospace' }}>
+                              SKU: {item.sku}
+                            </span>
+                          </div>
+
+                          <Badge variant={item.isOutOfStock ? 'danger' : (item.isCriticalStockout ? 'danger' : 'warning')} style={{ fontSize: '11px' }}>
+                            {item.statusBadge}
+                          </Badge>
+                        </div>
+
+                        {/* Velocity & Runway Metrics Grid */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: '1fr 1fr 1fr', 
+                          gap: '8px', 
+                          padding: '10px 12px', 
+                          backgroundColor: 'var(--neutral-50)', 
+                          borderRadius: '8px', 
+                          margin: '12px 0' 
+                        }}>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>Sales Velocity</span>
+                            <strong style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>{item.weeklyRunRate} units/wk</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>Stock Runway</span>
+                            <strong style={{ fontSize: '13px', color: item.daysOfSupply <= 7 ? '#dc2626' : 'var(--neutral-800)' }}>
+                              {item.isOutOfStock ? '0 Days (Empty)' : `~${item.daysOfSupply} Days Left`}
+                            </strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>30-Day Forecast</span>
+                            <strong style={{ fontSize: '13px', color: '#16a34a' }}>~{item.projected30DayDemand} units</strong>
+                          </div>
+                        </div>
+
+                        {/* AI Recommendation Box */}
+                        <div style={{ 
+                          padding: '10px 12px', 
+                          backgroundColor: '#fef2f2', 
+                          border: '1px solid #fecaca', 
+                          borderRadius: '6px', 
+                          marginBottom: '14px',
+                          fontSize: '12.5px',
+                          color: '#991b1b',
+                          lineHeight: 1.45
+                        }}>
+                          <strong>Recommendation:</strong> {item.recommendation}
+                        </div>
+
+                        {/* Action Footer */}
+                        <div className="flex-between">
+                          <span style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>
+                            Current stock: <strong>{item.currentStock} units</strong>
+                          </span>
+
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            icon={<Zap size={14} />}
+                            loading={restockingId === item.id}
+                            onClick={() => handleQuickRestock(item, item.recommendedReorderQty)}
+                          >
+                            Restock +{item.recommendedReorderQty} Units
+                          </Button>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  ))
+                ) : (
+                  <Card>
+                    <CardBody style={{ textAlign: 'center', padding: '36px', color: 'var(--neutral-500)', fontSize: '13px' }}>
+                      No fast-moving items detected yet. Process sales at checkout to track real-time velocity.
+                    </CardBody>
+                  </Card>
+                )}
+              </div>
+
+              {/* SECTION B: ❄️ LOW DEMAND & SLOW-MOVING ITEMS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="flex-between">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '6px', backgroundColor: '#e0f2fe', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Snowflake size={18} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: 'var(--neutral-900)' }}>
+                        Low Demand • Reduce Reorder
+                      </h3>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Items not suitable for bulk reordering. Reduce order quantities to free cash.
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="neutral">{demandInsights.slowMovers.length} Products</Badge>
+                </div>
+
+                {demandInsights.slowMovers.length > 0 ? (
+                  demandInsights.slowMovers.map(item => (
+                    <Card key={item.id} style={{ borderLeft: '4px solid #64748b' }}>
+                      <CardBody style={{ padding: '16px 18px' }}>
+                        <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: '8px' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', fontWeight: '600', textTransform: 'uppercase' }}>
+                              {item.category}
+                            </span>
+                            <h4 style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '700', color: 'var(--neutral-900)' }}>
+                              {item.title}
+                            </h4>
+                            <span style={{ fontSize: '12px', color: 'var(--neutral-500)', fontFamily: 'monospace' }}>
+                              SKU: {item.sku}
+                            </span>
+                          </div>
+
+                          <Badge variant="neutral" style={{ fontSize: '11px', backgroundColor: '#f1f5f9', color: '#475569' }}>
+                            {item.badge}
+                          </Badge>
+                        </div>
+
+                        {/* Capital & Sales Metrics Grid */}
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: '1fr 1fr 1fr', 
+                          gap: '8px', 
+                          padding: '10px 12px', 
+                          backgroundColor: 'var(--neutral-50)', 
+                          borderRadius: '8px', 
+                          margin: '12px 0' 
+                        }}>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>Units Sold</span>
+                            <strong style={{ fontSize: '13px', color: item.unitsSold === 0 ? '#dc2626' : 'var(--neutral-800)' }}>
+                              {item.unitsSold} units
+                            </strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>Stock On Hand</span>
+                            <strong style={{ fontSize: '13px', color: 'var(--neutral-800)' }}>{item.currentStock} units</strong>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '11px', color: 'var(--neutral-500)', display: 'block' }}>Capital Tied Up</span>
+                            <strong style={{ fontSize: '13px', color: '#b45309' }}>₹{item.capitalLocked.toLocaleString('en-IN')}</strong>
+                          </div>
+                        </div>
+
+                        {/* AI Advisory Box */}
+                        <div style={{ 
+                          padding: '10px 12px', 
+                          backgroundColor: '#f8fafc', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '6px', 
+                          marginBottom: '14px',
+                          fontSize: '12.5px',
+                          color: '#334155',
+                          lineHeight: 1.45
+                        }}>
+                          <strong>Strategy for Shopkeeper:</strong> {item.advice}
+                        </div>
+
+                        {/* Recommendation Advice Footer */}
+                        <div className="flex-between">
+                          <span style={{ fontSize: '12px', color: 'var(--neutral-600)' }}>
+                            Current Default Reorder: <strong>{item.restockQty} units</strong>
+                          </span>
+
+                          <Badge variant="warning" style={{ fontSize: '11px', padding: '4px 8px' }}>
+                            Reduce to ≤ {item.suggestedLowReorder} units
+                          </Badge>
+                        </div>
+                      </CardBody>
+                    </Card>
+                  ))
+                ) : (
+                  <Card>
+                    <CardBody style={{ textAlign: 'center', padding: '36px', color: 'var(--neutral-500)', fontSize: '13px' }}>
+                      All items currently have healthy turnover. No stagnant or dead stock detected.
+                    </CardBody>
+                  </Card>
+                )}
+              </div>
+
+            </div>
+
+            {/* Strategy Comparison Matrix */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Reorder Optimization Summary Matrix</CardTitle>
+                <CardDescription>
+                  Side-by-side comparison of standard reorder quantities versus smart demand-adjusted quantities.
+                </CardDescription>
+              </CardHeader>
+              <CardBody style={{ padding: 0 }}>
+                <Table style={{ border: 'none', borderRadius: 0 }}>
+                  <Thead>
+                    <Tr>
+                      <Th>Product</Th>
+                      <Th align="center">Velocity</Th>
+                      <Th align="center">Current Stock</Th>
+                      <Th align="center">Standard Batch</Th>
+                      <Th align="center">Smart Reorder</Th>
+                      <Th>Demand Classification</Th>
+                      <Th align="right">Strategic Action</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {products.map(p => {
+                      const hot = demandInsights.hotItems.find(h => h.id === p.id);
+                      const slow = demandInsights.slowMovers.find(s => s.id === p.id);
+
+                      let classification = 'Steady Performer';
+                      let classVariant = 'neutral';
+                      let smartQty = p.restockQty || 15;
+                      let actionText = 'Maintain current reorder levels';
+
+                      if (hot) {
+                        classification = hot.statusBadge;
+                        classVariant = hot.isOutOfStock || hot.isCriticalStockout ? 'danger' : 'success';
+                        smartQty = hot.recommendedReorderQty;
+                        actionText = `Increase order to +${smartQty} (High sales demand)`;
+                      } else if (slow) {
+                        classification = slow.badge;
+                        classVariant = 'warning';
+                        smartQty = slow.suggestedLowReorder;
+                        actionText = `Reduce order to ≤ ${smartQty} (Free up cash)`;
+                      }
+
+                      return (
+                        <Tr key={p.id}>
+                          <Td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span className="font-semibold text-neutral-800">{p.title || p.name}</span>
+                              <span className="text-xs text-muted">SKU: {p.sku}</span>
+                            </div>
+                          </Td>
+                          <Td align="center">
+                            <span className="font-medium text-neutral-700">
+                              {hot ? `${hot.weeklyRunRate} /wk` : (slow ? `${slow.unitsSold} total` : 'Steady')}
+                            </span>
+                          </Td>
+                          <Td align="center">
+                            <span className="font-bold text-neutral-800">{p.currentStock} units</span>
+                          </Td>
+                          <Td align="center">
+                            <span className="text-muted">{p.restockQty || 15} units</span>
+                          </Td>
+                          <Td align="center">
+                            <strong style={{ color: hot ? '#16a34a' : '#b45309', fontSize: '13.5px' }}>
+                              {smartQty} units
+                            </strong>
+                          </Td>
+                          <Td>
+                            <Badge variant={classVariant}>{classification}</Badge>
+                          </Td>
+                          <Td align="right">
+                            <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--neutral-700)' }}>
+                              {actionText}
+                            </span>
+                          </Td>
+                        </Tr>
+                      );
+                    })}
+                  </Tbody>
+                </Table>
+              </CardBody>
+            </Card>
+
+          </div>
+        )}
+
+        {/* TAB 2: OVERVIEW & REVENUE VELOCITY */}
         {activeTab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
@@ -712,7 +1223,7 @@ const Reports = () => {
           </div>
         )}
 
-        {/* TAB 2: PRODUCT PERFORMANCE & MARGINS */}
+        {/* TAB 3: PRODUCT PERFORMANCE & MARGINS */}
         {activeTab === 'products' && (
           <Card>
             <CardHeader className="flex-between">
@@ -812,10 +1323,9 @@ const Reports = () => {
           </Card>
         )}
 
-        {/* TAB 3: CATEGORY DISTRIBUTION */}
+        {/* TAB 4: CATEGORY DISTRIBUTION */}
         {activeTab === 'categories' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '20px' }}>
-            {/* Category Donut Chart */}
             <Card>
               <CardHeader>
                 <CardTitle>Revenue Contribution by Category</CardTitle>
@@ -871,7 +1381,6 @@ const Reports = () => {
               </CardBody>
             </Card>
 
-            {/* Category Performance Breakdown Table */}
             <Card>
               <CardHeader>
                 <CardTitle>Category Sales &amp; Velocity</CardTitle>
@@ -924,11 +1433,9 @@ const Reports = () => {
           </div>
         )}
 
-        {/* TAB 4: PROCUREMENT & RESTOCKS */}
+        {/* TAB 5: PROCUREMENT & RESTOCKS */}
         {activeTab === 'restock' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            {/* Restock KPI Ribbon */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
               <Card>
                 <CardBody>
@@ -983,7 +1490,6 @@ const Reports = () => {
               </Card>
             </div>
 
-            {/* Restock Orders Table */}
             <Card>
               <CardHeader className="flex-between">
                 <div>
@@ -1051,11 +1557,10 @@ const Reports = () => {
                 </Table>
               </CardBody>
             </Card>
-
           </div>
         )}
 
-        {/* TAB 5: FINANCIAL AUDIT & GST LEDGER */}
+        {/* TAB 6: FINANCIAL AUDIT & GST LEDGER */}
         {activeTab === 'ledger' && (
           <Card>
             <CardHeader className="flex-between flex-wrap" style={{ gap: '16px' }}>
