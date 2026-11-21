@@ -160,11 +160,7 @@ export async function getRestockOrders(userId) {
 
   const orders = await prisma.restockOrder.findMany({
     where: {
-      OR: [
-        { createdBy: userId },
-        { createdBy: null },
-        { createdBy: 'd5452c74-cf21-4e88-879d-8d3519d72b51' }
-      ]
+      createdBy: userId
     },
     include: {
       supplier: true,
